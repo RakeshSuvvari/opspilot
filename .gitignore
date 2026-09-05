@@ -1,0 +1,11 @@
+.env
+.DS_Store
+.idea/
+.vscode/
+__pycache__/
+*.pyc
+.venv/
+bin/
+dist/
+coverage.out
+*.log

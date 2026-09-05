@@ -1,0 +1,7 @@
+go 1.23.0
+
+use (
+    ./demo/services/checkout
+    ./demo/services/payment
+    ./demo/services/inventory
+)

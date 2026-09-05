@@ -1,0 +1,4 @@
+{"id":"INC-001","service":"payment","expected_root_cause":"DATABASE_URL missing from payment deployment configuration"}
+{"id":"INC-002","service":"checkout","expected_root_cause":"checkout exceeded its 64Mi Kubernetes memory limit"}
+{"id":"INC-003","service":"inventory","expected_root_cause":"readiness probe targets port 8081 while the service listens on 8080"}
+{"id":"INC-004","service":"checkout","expected_root_cause":"50ms downstream timeout is shorter than inventory's approximately 180ms response latency"}
