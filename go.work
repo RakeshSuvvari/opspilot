@@ -1,7 +1,8 @@
-go 1.23.0
+go 1.27.1
 
 use (
     ./demo/services/checkout
     ./demo/services/payment
     ./demo/services/inventory
+    ./services/k8s-mcp-server
 )
