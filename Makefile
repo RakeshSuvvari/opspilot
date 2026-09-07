@@ -11,7 +11,7 @@ AGENT_STAMP ?= $(AGENT_VENV)/.opspilot-installed
 QUERY ?= Investigate the current Kubernetes incident. Identify the most likely root cause, support it with live evidence, and recommend a safe remediation.
 
 .PHONY: help verify cluster-up cluster-down build-images load-images deploy-base reset-demo status logs-checkout logs-payment logs-inventory incident-1 incident-2 incident-3 incident-4 \
-	build-k8s-mcp-image load-k8s-mcp-image deploy-k8s-mcp restore-k8s-mcp-rbac status-k8s-mcp logs-k8s-mcp port-forward-k8s-mcp test-k8s-mcp smoke-k8s-mcp phase2-up \
+	build-k8s-mcp-image load-k8s-mcp-image deploy-k8s-mcp restart-k8s-mcp restore-k8s-mcp-rbac status-k8s-mcp logs-k8s-mcp port-forward-k8s-mcp test-k8s-mcp smoke-k8s-mcp phase2-up \
 	agent-setup agent-test agent-tools investigate investigate-1 agent-api build-agent-image phase3-check
 
 help:
@@ -33,6 +33,7 @@ help:
 	@echo "  make phase2-up           - build, load, and deploy the MCP server"
 	@echo "  make test-k8s-mcp        - run Go unit tests"
 	@echo "  make status-k8s-mcp      - show MCP server workload status"
+	@echo "  make restart-k8s-mcp     - recreate MCP pod so a rebuilt :dev image is used"
 	@echo "  make logs-k8s-mcp        - stream MCP server logs"
 	@echo "  make port-forward-k8s-mcp - expose MCP server at localhost:8080"
 	@echo "  make smoke-k8s-mcp       - connect as MCP client and call k8s_list_pods"
@@ -134,6 +135,10 @@ load-k8s-mcp-image:
 deploy-k8s-mcp:
 	@kubectl get namespace $(NAMESPACE) >/dev/null 2>&1 || (echo "$(NAMESPACE) does not exist. Run 'make deploy-base' first." && exit 1)
 	kubectl apply -k infra/kubernetes/opspilot/k8s-mcp-server
+	@$(MAKE) --no-print-directory restart-k8s-mcp
+
+restart-k8s-mcp:
+	kubectl rollout restart deployment/k8s-mcp-server -n $(SYSTEM_NAMESPACE)
 	kubectl rollout status deployment/k8s-mcp-server -n $(SYSTEM_NAMESPACE) --timeout=90s
 
 restore-k8s-mcp-rbac:

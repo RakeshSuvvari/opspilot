@@ -17,7 +17,7 @@ import (
 	"github.com/opspilot/opspilot/services/k8s-mcp-server/internal/tools"
 )
 
-const version = "0.2.0"
+const version = "0.2.1"
 
 func main() {
 	cfg := config.Load()
