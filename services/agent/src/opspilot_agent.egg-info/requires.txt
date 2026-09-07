@@ -1,0 +1,4 @@
+openai-agents==0.22.0
+pydantic<3,>=2.12.2
+fastapi<1,>=0.116
+uvicorn[standard]<1,>=0.35

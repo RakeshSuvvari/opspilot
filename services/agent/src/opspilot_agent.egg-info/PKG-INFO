@@ -1,0 +1,9 @@
+Metadata-Version: 2.4
+Name: opspilot-agent
+Version: 0.3.0
+Summary: OpsPilot OpenAI incident investigation agent
+Requires-Python: >=3.11
+Requires-Dist: openai-agents==0.22.0
+Requires-Dist: pydantic<3,>=2.12.2
+Requires-Dist: fastapi<1,>=0.116
+Requires-Dist: uvicorn[standard]<1,>=0.35

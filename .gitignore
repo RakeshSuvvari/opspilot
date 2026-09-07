@@ -9,3 +9,5 @@ bin/
 dist/
 coverage.out
 *.log
+services/agent/.venv/
+.pytest_cache/

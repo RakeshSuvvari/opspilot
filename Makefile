@@ -3,9 +3,16 @@ CLUSTER_NAME ?= opspilot
 NAMESPACE ?= opspilot-demo
 SYSTEM_NAMESPACE ?= opspilot-system
 K8S_MCP_IMAGE ?= opspilot/k8s-mcp-server:dev
+AGENT_IMAGE ?= opspilot/agent:dev
+AGENT_DIR ?= services/agent
+AGENT_VENV ?= $(AGENT_DIR)/.venv
+AGENT_PYTHON ?= $(AGENT_VENV)/bin/python
+AGENT_STAMP ?= $(AGENT_VENV)/.opspilot-installed
+QUERY ?= Investigate the current Kubernetes incident. Identify the most likely root cause, support it with live evidence, and recommend a safe remediation.
 
 .PHONY: help verify cluster-up cluster-down build-images load-images deploy-base reset-demo status logs-checkout logs-payment logs-inventory incident-1 incident-2 incident-3 incident-4 \
-	build-k8s-mcp-image load-k8s-mcp-image deploy-k8s-mcp restore-k8s-mcp-rbac status-k8s-mcp logs-k8s-mcp port-forward-k8s-mcp test-k8s-mcp smoke-k8s-mcp phase2-up
+	build-k8s-mcp-image load-k8s-mcp-image deploy-k8s-mcp restore-k8s-mcp-rbac status-k8s-mcp logs-k8s-mcp port-forward-k8s-mcp test-k8s-mcp smoke-k8s-mcp phase2-up \
+	agent-setup agent-test agent-tools investigate investigate-1 agent-api build-agent-image phase3-check
 
 help:
 	@echo "OpsPilot"
@@ -30,6 +37,15 @@ help:
 	@echo "  make port-forward-k8s-mcp - expose MCP server at localhost:8080"
 	@echo "  make smoke-k8s-mcp       - connect as MCP client and call k8s_list_pods"
 	@echo ""
+	@echo "Phase 3 - Python/OpenAI incident agent"
+	@echo "  make agent-setup         - create venv and install the Phase 3 agent"
+	@echo "  make agent-test          - run Phase 3 unit tests"
+	@echo "  make agent-tools         - verify Python agent -> Go MCP connectivity"
+	@echo "  make investigate         - run an investigation; override QUERY='...'"
+	@echo "  make investigate-1       - investigate the payment failure in INC-001"
+	@echo "  make agent-api           - run FastAPI agent service on port 8001"
+	@echo "  make phase3-check        - source checks + Phase 3 tests"
+	@echo ""
 	@echo "  make cluster-down        - delete local cluster"
 
 verify:
@@ -37,6 +53,7 @@ verify:
 	@command -v kind >/dev/null || (echo "kind is required" && exit 1)
 	@command -v kubectl >/dev/null || (echo "kubectl is required" && exit 1)
 	@command -v go >/dev/null || (echo "go is required for Phase 2 local tests/smoke client" && exit 1)
+	@command -v python3 >/dev/null || (echo "python3 is required for Phase 3" && exit 1)
 	@echo "All required tools are available."
 	@go version
 
@@ -147,3 +164,38 @@ smoke-k8s-mcp:
 
 phase2-up: build-k8s-mcp-image load-k8s-mcp-image deploy-k8s-mcp
 	@echo "Phase 2 MCP server deployed. Next: make port-forward-k8s-mcp"
+
+
+agent-setup: $(AGENT_STAMP)
+
+$(AGENT_STAMP): $(AGENT_DIR)/pyproject.toml
+	@test -x $(AGENT_PYTHON) || python3 -m venv $(AGENT_VENV)
+	$(AGENT_PYTHON) -m pip install --upgrade pip
+	$(AGENT_PYTHON) -m pip install -e $(AGENT_DIR)
+	@touch $(AGENT_STAMP)
+
+agent-test: agent-setup
+	PYTHONPATH=$(AGENT_DIR)/src $(AGENT_PYTHON) -m unittest discover -s $(AGENT_DIR)/tests -v
+
+agent-tools: agent-setup
+	@if [ -f .env ]; then set -a; source .env; set +a; fi; \
+		$(AGENT_PYTHON) -m opspilot_agent.cli tools
+
+investigate: agent-setup
+	@if [ -f .env ]; then set -a; source .env; set +a; fi; \
+		$(AGENT_PYTHON) -m opspilot_agent.cli investigate --namespace $(NAMESPACE) --query "$(QUERY)"
+
+investigate-1: agent-setup
+	@if [ -f .env ]; then set -a; source .env; set +a; fi; \
+		$(AGENT_PYTHON) -m opspilot_agent.cli investigate --namespace $(NAMESPACE) --query "Why is the payment service failing and repeatedly restarting? Diagnose the root cause from live Kubernetes evidence."
+
+agent-api: agent-setup
+	@if [ -f .env ]; then set -a; source .env; set +a; fi; \
+		$(AGENT_PYTHON) -m uvicorn opspilot_agent.api:app --host "$${OPSPILOT_AGENT_HOST:-127.0.0.1}" --port "$${OPSPILOT_AGENT_PORT:-8001}"
+
+build-agent-image:
+	docker build -t $(AGENT_IMAGE) $(AGENT_DIR)
+
+phase3-check: agent-test
+	./scripts/verify-source.sh
+	@echo "Phase 3 source checks passed. With the MCP port-forward running, use: make agent-tools"

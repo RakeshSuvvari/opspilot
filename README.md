@@ -261,3 +261,166 @@ Phase 3 adds the Python/OpenAI incident agent and connects it to this MCP endpoi
 - confidence level
 
 No write/remediation Kubernetes tools will be introduced yet.
+
+# Phase 3 — OpenAI Incident Agent
+
+Phase 3 connects a Python OpenAI agent to the read-only Go Kubernetes MCP server from Phase 2.
+The model controls the diagnostic loop, while the Go service remains the only component with
+Kubernetes API access.
+
+```text
+Engineer / CLI / HTTP
+        |
+        v
+Python OpsPilot Agent
+OpenAI Agents SDK + Responses API
+        |
+        | MCP Streamable HTTP
+        v
+Go Kubernetes MCP Server
+        |
+        v
+Kubernetes API
+```
+
+The agent currently expects these MCP tools:
+
+- `k8s_list_pods`
+- `k8s_get_pod`
+- `k8s_get_pod_logs`
+- `k8s_get_events`
+- `k8s_get_deployment`
+
+Its final response is a structured `IncidentReport` containing status, affected resources,
+root cause, confidence, evidence, timeline, recommended remediation, follow-up checks, and tools
+used. No Kubernetes write/remediation tools exist in this phase.
+
+## Phase 3 setup
+
+The repository workspace now targets Go 1.27.1. Phase 3 requires Python 3.11+.
+
+Create the Python environment:
+
+```bash
+make agent-setup
+make agent-test
+```
+
+Set your platform API key in `.env`:
+
+```bash
+OPENAI_API_KEY=sk-...
+OPENAI_MODEL=gpt-5.6-terra
+```
+
+`gpt-5.6-terra` is the default Phase 3 model because it balances capability and API cost. The
+model can be changed entirely through `OPENAI_MODEL` without code changes.
+
+## Run Python -> Go MCP connectivity check
+
+The Phase 2 MCP service must already be deployed. In terminal 1:
+
+```bash
+make port-forward-k8s-mcp
+```
+
+In terminal 2:
+
+```bash
+make agent-tools
+```
+
+Expected tool list:
+
+```text
+k8s_get_deployment
+k8s_get_events
+k8s_get_pod
+k8s_get_pod_logs
+k8s_list_pods
+```
+
+This command does not call OpenAI; it only validates the Python MCP client path to the Go server.
+
+## First end-to-end AI investigation — INC-001
+
+Inject the deterministic payment failure:
+
+```bash
+make incident-1
+```
+
+Keep the MCP port-forward running, then execute:
+
+```bash
+make investigate-1
+```
+
+The agent should autonomously collect evidence similar to:
+
+```text
+k8s_list_pods
+      |
+      v
+payment pod restarting / CrashLoopBackOff
+      |
+      +--> k8s_get_pod
+      +--> k8s_get_events
+      +--> k8s_get_pod_logs
+      +--> k8s_get_deployment
+      |
+      v
+DATABASE_URL required by the application but absent from Deployment
+      |
+      v
+Structured evidence-backed RCA
+```
+
+The exact tool order is intentionally not hard-coded; deciding what evidence to collect is part of
+the agent behavior.
+
+Run any custom investigation with:
+
+```bash
+make investigate QUERY="Why is inventory not becoming Ready?"
+```
+
+## Phase 3 developer API
+
+The Python service also exposes the same runtime through FastAPI for the later Go Incident API.
+With the MCP port-forward active:
+
+```bash
+make agent-api
+```
+
+Health/tool endpoints:
+
+```bash
+curl http://localhost:8001/healthz
+curl http://localhost:8001/v1/tools
+```
+
+Investigation endpoint:
+
+```bash
+curl -s http://localhost:8001/v1/investigations \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "namespace": "opspilot-demo",
+    "query": "Why is the payment service failing and repeatedly restarting?"
+  }'
+```
+
+## Tracing and data handling
+
+OpenAI Agents SDK tracing is left enabled by default so agent/model/tool execution can be inspected
+while developing OpsPilot. `OPSPILOT_AGENT_TRACE_SENSITIVE_DATA=false` is the project default so
+potentially sensitive generation/tool payloads are not included in traces. The Phase 2 Go MCP
+server also redacts likely secret environment variable values before they reach the agent.
+
+## Phase 3 success criterion
+
+Phase 3 is complete when, for INC-001, the agent independently calls the Kubernetes MCP tools and
+returns a high-confidence root cause that the payment workload is restarting because the required
+`DATABASE_URL` configuration was removed, supported by pod/log/deployment evidence.

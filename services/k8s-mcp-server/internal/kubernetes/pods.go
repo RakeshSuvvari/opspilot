@@ -32,7 +32,7 @@ func (c *Client) ListPods(ctx context.Context, namespace, labelSelector string) 
 		for _, status := range pod.Status.ContainerStatuses {
 			container := summarizeContainerStatus(status)
 			summary.Restarts += status.RestartCount
-			summary.Containers = append(summary.Containers, container)
+			summary.ContainerStates = append(summary.ContainerStates, container)
 		}
 		result = append(result, summary)
 	}
@@ -65,7 +65,7 @@ func (c *Client) GetPod(ctx context.Context, namespace, name string) (PodDetails
 		state := summarizeContainerStatus(status)
 		statusByName[status.Name] = state
 		summary.Restarts += status.RestartCount
-		summary.Containers = append(summary.Containers, state)
+		summary.ContainerStates = append(summary.ContainerStates, state)
 	}
 
 	result := PodDetails{PodSummary: summary}

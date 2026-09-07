@@ -1,16 +1,16 @@
 package kubernetes
 
 type PodSummary struct {
-	Name       string            `json:"name"`
-	Namespace  string            `json:"namespace"`
-	Phase      string            `json:"phase"`
-	Ready      bool              `json:"ready"`
-	Restarts   int32             `json:"restarts"`
-	Node       string            `json:"node,omitempty"`
-	PodIP      string            `json:"pod_ip,omitempty"`
-	StartTime  string            `json:"start_time,omitempty"`
-	Labels     map[string]string `json:"labels,omitempty"`
-	Containers []ContainerState  `json:"containers"`
+	Name            string            `json:"name"`
+	Namespace       string            `json:"namespace"`
+	Phase           string            `json:"phase"`
+	Ready           bool              `json:"ready"`
+	Restarts        int32             `json:"restarts"`
+	Node            string            `json:"node,omitempty"`
+	PodIP           string            `json:"pod_ip,omitempty"`
+	StartTime       string            `json:"start_time,omitempty"`
+	Labels          map[string]string `json:"labels,omitempty"`
+	ContainerStates []ContainerState  `json:"containers"`
 }
 
 type PodDetails struct {

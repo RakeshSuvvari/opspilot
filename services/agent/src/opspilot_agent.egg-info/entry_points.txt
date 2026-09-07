@@ -1,0 +1,2 @@
+[console_scripts]
+opspilot-agent = opspilot_agent.cli:main
