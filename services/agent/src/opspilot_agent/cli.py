@@ -52,7 +52,7 @@ def _print_report(report: IncidentReport) -> None:
         for step in report.follow_up_checks:
             print(f"- {step}")
 
-    print("\nMCP tools used")
+    print("\nTools used")
     print(", ".join(report.tools_used) if report.tools_used else "none")
 
 

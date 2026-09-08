@@ -424,3 +424,150 @@ server also redacts likely secret environment variable values before they reach 
 Phase 3 is complete when, for INC-001, the agent independently calls the Kubernetes MCP tools and
 returns a high-confidence root cause that the payment workload is restarting because the required
 `DATABASE_URL` configuration was removed, supported by pod/log/deployment evidence.
+
+# Phase 4 — PostgreSQL + pgvector RAG
+
+Phase 4 adds organizational knowledge retrieval to the live Kubernetes investigation flow.
+The agent still treats Kubernetes MCP evidence as the source of truth for the current incident,
+but it can now search runbooks, architecture documentation, historical incidents, and
+postmortems for analogous failures and safer remediation guidance.
+
+```text
+Engineer
+   |
+   v
+Python/OpenAI Incident Agent
+   |                         \
+   | MCP                      \ search_knowledge
+   v                           v
+Go Kubernetes MCP        PostgreSQL / pgvector
+   |                           |
+   v                           v
+Live Kubernetes          Runbooks / incidents /
+evidence                 postmortems / architecture
+          \               /
+           \             /
+            v           v
+           Evidence-backed RCA
+```
+
+## Database
+
+The local database is named `opspilot`, with a dedicated `knowledge` schema:
+
+```text
+knowledge.documents
+knowledge.chunks
+```
+
+Chunks use `vector(1536)` embeddings with an HNSW cosine-distance index. The schema also creates
+a PostgreSQL full-text `tsvector`/GIN index so hybrid search can be added without a database
+migration in a later phase.
+
+### Configure `.env`
+
+Copy `.env.example` if needed and use the same local PostgreSQL credentials you use in PgAdmin:
+
+```text
+OPSPILOT_DATABASE_URL=postgresql://postgres:YOUR_PASSWORD@localhost:5432/opspilot
+OPSPILOT_POSTGRES_ADMIN_URL=postgresql://postgres:YOUR_PASSWORD@localhost:5432/postgres
+OPSPILOT_RAG_ENABLED=true
+OPSPILOT_EMBEDDING_MODEL=text-embedding-3-small
+OPSPILOT_EMBEDDING_DIMENSIONS=1536
+```
+
+### Create and initialize the database
+
+Using OpsPilot commands:
+
+```bash
+make agent-setup
+make db-create
+make db-init
+make db-check
+```
+
+Or use PgAdmin directly:
+
+1. Run `infra/postgres/00-create-database.sql` while connected to `postgres`.
+2. Switch to the newly created `opspilot` database.
+3. Run `infra/postgres/01-schema.sql`.
+
+`CREATE EXTENSION vector` requires the pgvector extension to be installed in the PostgreSQL
+server, not merely PgAdmin.
+
+### Index the knowledge base
+
+```bash
+make rag-ingest
+make rag-stats
+```
+
+The ingestion pipeline:
+
+```text
+knowledge/**/*.md
+      |
+      v
+heading-aware chunking
+      |
+      v
+OpenAI text-embedding-3-small
+      |
+      v
+PostgreSQL knowledge.documents + knowledge.chunks
+      |
+      v
+pgvector HNSW cosine index
+```
+
+Ingestion uses SHA-256 content hashes. Re-running `make rag-ingest` skips unchanged documents, so
+we do not pay to regenerate embeddings unnecessarily.
+
+### Test retrieval without the agent
+
+```bash
+make rag-search RAG_QUERY="payment crashloop missing database configuration"
+```
+
+A successful result should rank the payment database runbook and/or the historical payment
+postmortem near the top.
+
+### Agent + RAG
+
+With Phase 2's MCP port-forward running, inject an incident and investigate normally:
+
+```bash
+make incident-1
+make investigate-1
+```
+
+The agent can now decide to call:
+
+```text
+k8s_list_pods
+k8s_get_pod
+k8s_get_events
+k8s_get_pod_logs
+k8s_get_deployment
+search_knowledge
+```
+
+For INC-001, live Kubernetes evidence should still establish that `DATABASE_URL` is missing. The
+knowledge search can then retrieve the payment configuration runbook and similar historical
+postmortem to strengthen remediation guidance. Historical documents must never be treated as
+proof of the current cluster state.
+
+### Phase 4 checks
+
+```bash
+make phase4-check
+```
+
+Phase 4 is complete when:
+
+1. `make db-check` reports the `opspilot` database and an installed pgvector version.
+2. `make rag-ingest` indexes the Markdown knowledge base.
+3. `make rag-search` returns semantically relevant runbooks/incidents.
+4. `make investigate-1` includes `search_knowledge` when useful while grounding the root cause in
+   live Kubernetes evidence.

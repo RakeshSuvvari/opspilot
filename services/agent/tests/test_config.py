@@ -14,11 +14,24 @@ class SettingsTests(unittest.TestCase):
         self.assertEqual(settings.default_namespace, "opspilot-demo")
         self.assertEqual(settings.max_turns, 12)
         self.assertFalse(settings.trace_sensitive_data)
+        self.assertTrue(settings.rag_enabled)
+        self.assertEqual(settings.embedding_model, "text-embedding-3-small")
+        self.assertEqual(settings.embedding_dimensions, 1536)
+        self.assertEqual(settings.database_name, "opspilot")
 
     def test_invalid_mcp_url(self):
         with patch.dict(
             os.environ,
             {"OPSPILOT_K8S_MCP_URL": "localhost:8080/mcp"},
+            clear=True,
+        ):
+            with self.assertRaises(ValueError):
+                Settings.from_env()
+
+    def test_invalid_embedding_dimensions(self):
+        with patch.dict(
+            os.environ,
+            {"OPSPILOT_EMBEDDING_DIMENSIONS": "1024"},
             clear=True,
         ):
             with self.assertRaises(ValueError):

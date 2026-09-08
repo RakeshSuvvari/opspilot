@@ -1,64 +1,39 @@
-# OpsPilot Agent Service (Phase 3)
+# OpsPilot Agent Service (Phases 3–4)
 
-Python/OpenAI orchestration layer for evidence-backed Kubernetes incident diagnosis.
+The Python service orchestrates the OpenAI incident agent, the read-only Go Kubernetes MCP server,
+and the PostgreSQL/pgvector knowledge base.
 
 ## Responsibilities
 
-- Connect to the Go Kubernetes MCP server over Streamable HTTP.
-- Let the OpenAI agent choose diagnostic MCP tools autonomously.
-- Return a typed `IncidentReport` rather than free-form chat text.
-- Keep Phase 3 read-only: the agent may recommend remediation but cannot execute it.
-- Keep OpenAI tracing enabled by default while excluding sensitive inputs/tool outputs from trace payloads.
+- Connect to the Go Kubernetes MCP server with Streamable HTTP.
+- Let the OpenAI agent autonomously select Kubernetes diagnostic tools.
+- Expose `search_knowledge` for RAG over runbooks, incidents, postmortems, and architecture docs.
+- Return the typed `IncidentReport` schema through the CLI and FastAPI API.
+- Keep current-cluster diagnosis read-only and evidence-backed.
 
-## MCP tools expected
+## Setup
 
-- `k8s_list_pods`
-- `k8s_get_pod`
-- `k8s_get_pod_logs`
-- `k8s_get_events`
-- `k8s_get_deployment`
-
-The service refuses to start its runtime if any expected Phase 2 diagnostic tool is missing.
-
-## Configuration
+From the repository root:
 
 ```bash
-export OPENAI_API_KEY="..."
-export OPENAI_MODEL="gpt-5.6-terra"
-export OPSPILOT_K8S_MCP_URL="http://localhost:8080/mcp"
-export OPSPILOT_DEFAULT_NAMESPACE="opspilot-demo"
+make agent-setup
+make agent-test
 ```
 
-Additional controls:
+Phase 4 database setup:
 
 ```bash
-export OPSPILOT_AGENT_MAX_TURNS=12
-export OPSPILOT_AGENT_MCP_TIMEOUT_SECONDS=10
-export OPSPILOT_AGENT_MCP_RETRIES=2
-export OPSPILOT_AGENT_TRACE_SENSITIVE_DATA=false
-export OPSPILOT_AGENT_DISABLE_TRACING=false
+make db-create
+make db-init
+make rag-ingest
+make rag-search RAG_QUERY="crashloop missing database configuration"
 ```
 
-## CLI
+With the Go MCP server port-forward running:
 
 ```bash
-opspilot-agent tools
-
-opspilot-agent investigate \
-  --query "Why is the payment service failing?" \
-  --namespace opspilot-demo
+make agent-tools
+make investigate-1
 ```
 
-Use `--json` for an evaluation/API-friendly JSON object.
-
-## Developer API
-
-```bash
-uvicorn opspilot_agent.api:app --host 127.0.0.1 --port 8001
-```
-
-Endpoints:
-
-- `GET /healthz`
-- `GET /v1/tools`
-- `POST /v1/investigations`
+`agent-tools` now lists the five Kubernetes MCP tools plus `search_knowledge` when RAG is enabled.

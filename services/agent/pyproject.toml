@@ -4,18 +4,23 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "opspilot-agent"
-version = "0.3.0"
-description = "OpsPilot OpenAI incident investigation agent"
+version = "0.4.0"
+description = "OpsPilot OpenAI incident investigation agent with PostgreSQL/pgvector RAG"
 requires-python = ">=3.11"
 dependencies = [
     "openai-agents==0.22.0",
+    "openai>=3.0,<4",
     "pydantic>=2.12.2,<3",
     "fastapi>=0.116,<1",
     "uvicorn[standard]>=0.35,<1",
+    "psycopg[binary]>=3.3,<4",
+    "pgvector>=0.5,<1",
 ]
 
 [project.scripts]
 opspilot-agent = "opspilot_agent.cli:main"
+opspilot-rag = "opspilot_agent.rag.cli:main"
+opspilot-db = "opspilot_agent.rag.admin:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

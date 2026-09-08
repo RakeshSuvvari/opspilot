@@ -20,10 +20,10 @@ class Confidence(str, Enum):
 
 class EvidenceItem(BaseModel):
     source: str = Field(
-        description="Evidence source, such as pod, logs, events, or deployment."
+        description="Evidence source, such as pod, logs, events, deployment, runbook, or historical incident."
     )
     resource: str = Field(
-        description="Exact Kubernetes resource or component that produced the evidence."
+        description="Exact Kubernetes resource, component, or knowledge document that produced the evidence."
     )
     observation: str = Field(
         description="Concise factual observation returned by a diagnostic tool."

@@ -18,9 +18,17 @@ if [[ -n "${phase2_diff}" ]]; then
   exit 1
 fi
 
-echo "Phase 2 Go source is gofmt-clean. Run 'make test-k8s-mcp' with Go 1.27.1 and downloaded modules for dependency-aware tests."
+echo "Phase 2 Go source is gofmt-clean."
 
-echo "==> Phase 3 Python syntax"
+echo "==> Phase 3/4 Python syntax"
 python3 -m compileall -q "${ROOT_DIR}/services/agent/src" "${ROOT_DIR}/services/agent/tests"
 
-echo "Phase 3 Python source compiles successfully."
+echo "Phase 3/4 Python source compiles successfully."
+
+echo "==> Phase 4 SQL files"
+test -s "${ROOT_DIR}/infra/postgres/00-create-database.sql"
+test -s "${ROOT_DIR}/infra/postgres/01-schema.sql"
+grep -q "CREATE EXTENSION IF NOT EXISTS vector" "${ROOT_DIR}/infra/postgres/01-schema.sql"
+grep -q "USING hnsw" "${ROOT_DIR}/infra/postgres/01-schema.sql"
+
+echo "Phase 4 PostgreSQL schema files are present."

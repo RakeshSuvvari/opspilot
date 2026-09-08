@@ -5,6 +5,7 @@ from agents.mcp import MCPServerStreamableHttp
 
 from .config import Settings
 from .prompts import SYSTEM_INSTRUCTIONS, build_investigation_prompt
+from .rag.tool import build_search_knowledge_tool
 from .schemas import IncidentReport
 
 EXPECTED_MCP_TOOLS = {
@@ -31,11 +32,16 @@ class IncidentAgentRuntime:
             max_retry_attempts=settings.mcp_retries,
             require_approval="never",
         )
+        local_tools = []
+        if settings.rag_enabled:
+            local_tools.append(build_search_knowledge_tool(settings))
+
         self._agent = Agent(
             name="OpsPilot Incident Investigator",
             instructions=SYSTEM_INSTRUCTIONS,
             model=settings.openai_model,
             mcp_servers=[self._mcp],
+            tools=local_tools,
             output_type=IncidentReport,
         )
 
@@ -47,7 +53,7 @@ class IncidentAgentRuntime:
         await self._mcp.connect()
         self._started = True
 
-        available = set(await self.list_tools())
+        available = set(await self.list_mcp_tools())
         missing = EXPECTED_MCP_TOOLS - available
         if missing:
             await self.close()
@@ -62,11 +68,17 @@ class IncidentAgentRuntime:
         finally:
             self._started = False
 
-    async def list_tools(self) -> list[str]:
+    async def list_mcp_tools(self) -> list[str]:
         if not self._started:
             raise RuntimeError("IncidentAgentRuntime is not started")
         tools = await self._mcp.list_tools()
         return sorted(tool.name for tool in tools)
+
+    async def list_tools(self) -> list[str]:
+        tools = await self.list_mcp_tools()
+        if self.settings.rag_enabled:
+            tools.append("search_knowledge")
+        return sorted(tools)
 
     async def investigate(self, query: str, namespace: str | None = None) -> IncidentReport:
         if not self._started:
@@ -87,6 +99,7 @@ class IncidentAgentRuntime:
                 trace_metadata={
                     "namespace": target_namespace,
                     "model": self.settings.openai_model,
+                    "rag_enabled": str(self.settings.rag_enabled).lower(),
                     "component": "opspilot-agent",
                 },
             ),

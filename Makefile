@@ -9,10 +9,12 @@ AGENT_VENV ?= $(AGENT_DIR)/.venv
 AGENT_PYTHON ?= $(AGENT_VENV)/bin/python
 AGENT_STAMP ?= $(AGENT_VENV)/.opspilot-installed
 QUERY ?= Investigate the current Kubernetes incident. Identify the most likely root cause, support it with live evidence, and recommend a safe remediation.
+RAG_QUERY ?= crashloop missing database configuration
 
 .PHONY: help verify cluster-up cluster-down build-images load-images deploy-base reset-demo status logs-checkout logs-payment logs-inventory incident-1 incident-2 incident-3 incident-4 \
 	build-k8s-mcp-image load-k8s-mcp-image deploy-k8s-mcp restart-k8s-mcp restore-k8s-mcp-rbac status-k8s-mcp logs-k8s-mcp port-forward-k8s-mcp test-k8s-mcp smoke-k8s-mcp phase2-up \
-	agent-setup agent-test agent-tools investigate investigate-1 agent-api build-agent-image phase3-check
+	agent-setup agent-test agent-tools investigate investigate-1 agent-api build-agent-image phase3-check \
+	db-create db-init db-check rag-ingest rag-search rag-stats phase4-check
 
 help:
 	@echo "OpsPilot"
@@ -46,6 +48,15 @@ help:
 	@echo "  make investigate-1       - investigate the payment failure in INC-001"
 	@echo "  make agent-api           - run FastAPI agent service on port 8001"
 	@echo "  make phase3-check        - source checks + Phase 3 tests"
+	@echo ""
+	@echo "Phase 4 - PostgreSQL/pgvector RAG"
+	@echo "  make db-create           - create the local opspilot PostgreSQL database"
+	@echo "  make db-init             - enable pgvector and create knowledge tables/indexes"
+	@echo "  make db-check            - show PostgreSQL, pgvector, document, and chunk status"
+	@echo "  make rag-ingest          - embed and index Markdown files under knowledge/"
+	@echo "  make rag-search          - semantic search; override RAG_QUERY='...'"
+	@echo "  make rag-stats           - summarize indexed documents and chunks"
+	@echo "  make phase4-check        - source checks + agent/RAG unit tests"
 	@echo ""
 	@echo "  make cluster-down        - delete local cluster"
 
@@ -204,3 +215,32 @@ build-agent-image:
 phase3-check: agent-test
 	./scripts/verify-source.sh
 	@echo "Phase 3 source checks passed. With the MCP port-forward running, use: make agent-tools"
+
+# Phase 4 - PostgreSQL/pgvector knowledge base
+db-create: agent-setup
+	@if [ -f .env ]; then set -a; source .env; set +a; fi; \
+		$(AGENT_PYTHON) -m opspilot_agent.rag.admin create
+
+db-init: agent-setup
+	@if [ -f .env ]; then set -a; source .env; set +a; fi; \
+		$(AGENT_PYTHON) -m opspilot_agent.rag.admin init
+
+db-check: agent-setup
+	@if [ -f .env ]; then set -a; source .env; set +a; fi; \
+		$(AGENT_PYTHON) -m opspilot_agent.rag.admin check
+
+rag-ingest: agent-setup
+	@if [ -f .env ]; then set -a; source .env; set +a; fi; \
+		$(AGENT_PYTHON) -m opspilot_agent.rag.cli ingest --root knowledge
+
+rag-search: agent-setup
+	@if [ -f .env ]; then set -a; source .env; set +a; fi; \
+		$(AGENT_PYTHON) -m opspilot_agent.rag.cli search --query "$(RAG_QUERY)"
+
+rag-stats: agent-setup
+	@if [ -f .env ]; then set -a; source .env; set +a; fi; \
+		$(AGENT_PYTHON) -m opspilot_agent.rag.cli stats
+
+phase4-check: agent-test
+	./scripts/verify-source.sh
+	@echo "Phase 4 source checks passed. Next: make db-check && make rag-search"
