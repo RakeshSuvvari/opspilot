@@ -306,6 +306,12 @@ make agent-setup
 make agent-test
 ```
 
+Create local environment configuration:
+
+```bash
+cp .env.example .env
+```
+
 Set your platform API key in `.env`:
 
 ```bash

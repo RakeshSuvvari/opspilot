@@ -34,3 +34,17 @@ SELECT extversion FROM pg_extension WHERE extname = 'vector';
 - `knowledge.chunks`: Markdown chunks and 1536-dimensional embeddings.
 - `idx_knowledge_chunks_embedding_hnsw`: HNSW cosine index.
 - `idx_knowledge_chunks_search_vector`: PostgreSQL full-text GIN index reserved for hybrid retrieval.
+
+
+## Runtime role model
+
+`OPSPILOT_POSTGRES_ADMIN_URL` is used only for database/schema administration.
+`OPSPILOT_DATABASE_URL` is the least-privilege runtime role used by ingestion and retrieval.
+`make db-init` creates/updates the schema with the admin connection and grants the runtime role:
+
+- CONNECT on the `opspilot` database
+- USAGE on the `knowledge` schema
+- SELECT/INSERT/UPDATE/DELETE on knowledge tables
+- USAGE/SELECT on knowledge sequences
+
+The runtime role does not need CREATE or database ownership.

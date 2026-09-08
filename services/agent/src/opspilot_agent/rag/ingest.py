@@ -153,27 +153,28 @@ def ingest_directory(
                 "DELETE FROM knowledge.chunks WHERE document_id = %s",
                 (document_id,),
             )
-            conn.executemany(
-                """
-                INSERT INTO knowledge.chunks (
-                    document_id,
-                    chunk_index,
-                    heading,
-                    content,
-                    embedding
-                ) VALUES (%s, %s, %s, %s, %s)
-                """,
-                [
-                    (
+            with conn.cursor() as cur:
+                cur.executemany(
+                    """
+                    INSERT INTO knowledge.chunks (
                         document_id,
-                        chunk.index,
-                        chunk.heading,
-                        chunk.content,
-                        Vector(embedding),
-                    )
-                    for chunk, embedding in zip(chunks, embeddings, strict=True)
-                ],
-            )
+                        chunk_index,
+                        heading,
+                        content,
+                        embedding
+                    ) VALUES (%s, %s, %s, %s, %s)
+                    """,
+                    [
+                        (
+                            document_id,
+                            chunk.index,
+                            chunk.heading,
+                            chunk.content,
+                            Vector(embedding),
+                        )
+                        for chunk, embedding in zip(chunks, embeddings, strict=True)
+                    ],
+                )
             conn.commit()
             indexed += 1
             chunk_count += len(chunks)

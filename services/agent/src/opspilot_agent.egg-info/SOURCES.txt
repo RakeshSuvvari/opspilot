@@ -25,6 +25,7 @@ src/opspilot_agent/rag/retrieval.py
 src/opspilot_agent/rag/tool.py
 tests/test_chunking.py
 tests/test_config.py
+tests/test_ingest.py
 tests/test_prompts.py
 tests/test_rag_models.py
 tests/test_schemas.py

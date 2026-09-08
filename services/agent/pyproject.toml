@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "opspilot-agent"
-version = "0.4.0"
+version = "0.4.1"
 description = "OpsPilot OpenAI incident investigation agent with PostgreSQL/pgvector RAG"
 requires-python = ">=3.11"
 dependencies = [
