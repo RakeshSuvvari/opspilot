@@ -117,7 +117,7 @@ async def _run_investigation(args: argparse.Namespace, settings: Settings) -> in
     return 0
 
 
-def _prompt_approval(request: ApprovalRequest) -> bool:
+async def _prompt_approval(request: ApprovalRequest) -> bool:
     print("\n" + "!" * 72)
     print("HUMAN APPROVAL REQUIRED")
     print(f"Tool:   {request.tool_name}")
@@ -126,8 +126,13 @@ def _prompt_approval(request: ApprovalRequest) -> bool:
     print("Arguments:")
     print(json.dumps(request.arguments, indent=2, sort_keys=True))
     print("!" * 72)
-    answer = input("Approve this exact Kubernetes action? [y/N]: ").strip().lower()
-    return answer in {"y", "yes"}
+
+    answer = await asyncio.to_thread(
+        input,
+        "Approve this exact Kubernetes action? [y/N]: ",
+    )
+
+    return answer.strip().lower() in {"y", "yes"}
 
 
 async def _run_remediation(args: argparse.Namespace, settings: Settings) -> int:

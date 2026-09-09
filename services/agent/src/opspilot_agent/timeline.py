@@ -83,10 +83,16 @@ def _deployment_timeline(output: dict[str, Any], events: list[TimelineEvent]) ->
 
 
 def _commit_timeline(output: dict[str, Any], events: list[TimelineEvent]) -> None:
-    sha = output.get("sha", "")
-    message = str(output.get("message", "")).splitlines()[0]
-    _append(events, output.get("authored_at"), f"Source commit {sha[:12]} authored: {message}.")
+    sha = str(output.get("sha") or "")
 
+    message_text = str(output.get("message") or "").strip()
+    message = message_text.splitlines()[0] if message_text else "(no commit message)"
+
+    _append(
+        events,
+        output.get("authored_at"),
+        f"Source commit {sha[:12]} authored: {message}.",
+    )
 
 def _compare_timeline(output: dict[str, Any], events: list[TimelineEvent]) -> None:
     for commit in output.get("commits") or []:

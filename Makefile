@@ -475,8 +475,12 @@ remediate: agent-setup
 
 remediate-1: agent-setup
 	@if [ -f .env ]; then set -a; source .env; set +a; fi; \
-		OPSPILOT_REMEDIATION_ENABLED=true $(AGENT_PYTHON) -m opspilot_agent.cli remediate --namespace $(NAMESPACE) --query "Diagnose why payment is repeatedly restarting. If the failure is a newly rolled out deployment regression and rollback is supported by live revision history, request the safest corrective action, then verify recovery after approval."
-
+		OPSPILOT_REMEDIATION_ENABLED=true \
+		OPSPILOT_GITHUB_ENABLED=false \
+		$(AGENT_PYTHON) -m opspilot_agent.cli remediate \
+		--namespace $(NAMESPACE) \
+		--query "Diagnose why payment is repeatedly restarting. If the failure is a newly rolled out deployment regression and rollback is supported by live revision history, request the safest corrective action, then verify recovery after approval."
+		
 phase7-check: agent-test
 	./scripts/verify-source.sh
 	@grep -q 'OPSPILOT_REMEDIATION_ENABLED=false' .env

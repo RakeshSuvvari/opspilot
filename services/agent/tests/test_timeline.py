@@ -89,6 +89,25 @@ class TimelineTests(unittest.TestCase):
         self.assertEqual(len(timeline), 1)
         self.assertIn("Human-approved remediation rolled back Deployment payment", timeline[0].event)
 
+    def test_empty_github_commit_message_does_not_crash(self):
+        records = [
+            ToolRecord(
+                name="github_get_commit",
+                call_id="g-empty",
+                arguments={"sha": "abc123"},
+                output={
+                    "sha": "abc123def456",
+                    "message": "",
+                    "authored_at": "2026-09-09T10:00:00Z",
+                },
+            )
+        ]
+
+        timeline = build_timeline(records)
+
+        self.assertEqual(len(timeline), 1)
+        self.assertIn("(no commit message)", timeline[0].event)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import inspect
 import json
+import re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -9,7 +10,7 @@ from time import perf_counter
 from typing import Any
 from uuid import uuid4
 
-from agents import Agent, RunConfig, Runner, set_tracing_disabled
+from agents import Agent, ModelSettings, RunConfig, Runner, set_tracing_disabled
 from agents.mcp import MCPServerStreamableHttp, create_static_tool_filter
 
 from .assessment import assess_evidence
@@ -61,6 +62,11 @@ class _ApprovalDecision:
     request: ApprovalRequest
     approved: bool
 
+@dataclass(frozen=True)
+class _RemediationSelection:
+    tool_name: str
+    deployment_name: str
+    replicas: int | None = None
 
 class IncidentAgentRuntime:
     def __init__(self, settings: Settings):
@@ -297,16 +303,80 @@ class IncidentAgentRuntime:
             },
         )
 
+        active_agent = agent
+
         result = await Runner.run(
-            agent,
+            active_agent,
             prompt,
             max_turns=self.settings.max_turns,
             run_config=run_config,
         )
+
         usage_totals = _usage_totals(result)
         records: list[ToolRecord] = []
         decisions: list[_ApprovalDecision] = []
-        records = _merge_tool_records(records, extract_tool_records(result.new_items))
+
+        records = _merge_tool_records(
+            records,
+            extract_tool_records(result.new_items),
+        )
+
+        #
+        # The model may correctly diagnose an incident and recommend remediation
+        # without actually emitting the mutating MCP tool call.
+        #
+        # In remediation mode, convert that recommendation into a dedicated
+        # action turn and force the exact supported tool.
+        #
+        if remediation and not result.interruptions:
+            write_tool_used = any(
+                record.name in REMEDIATION_K8S_MCP_TOOLS
+                for record in records
+            )
+
+            if not write_tool_used and result.final_output is not None:
+                preliminary_report = (
+                    result.final_output
+                    if isinstance(result.final_output, AgentIncidentReport)
+                    else AgentIncidentReport.model_validate(result.final_output)
+                )
+
+                selection = _select_remediation_action(preliminary_report)
+
+                if selection is not None:
+                    active_agent = agent.clone(
+                        name="OpsPilot Incident Remediator - Action Turn",
+                        model_settings=ModelSettings(
+                            tool_choice=selection.tool_name,
+                        ),
+                        reset_tool_choice=True,
+                    )
+
+                    action_input = result.to_input_list()
+
+                    action_input.append(
+                        {
+                            "role": "user",
+                            "content": _build_action_prompt(
+                                selection,
+                                target_namespace,
+                            ),
+                        }
+                    )
+
+                    result = await Runner.run(
+                        active_agent,
+                        action_input,
+                        max_turns=self.settings.max_turns,
+                        run_config=run_config,
+                    )
+
+                    _accumulate_usage(usage_totals, result)
+
+                    records = _merge_tool_records(
+                        records,
+                        extract_tool_records(result.new_items),
+                    )
 
         while remediation and result.interruptions:
             if approval_handler is None:
@@ -328,7 +398,7 @@ class IncidentAgentRuntime:
                         ),
                     )
             result = await Runner.run(
-                agent,
+                active_agent,
                 state,
                 max_turns=self.settings.max_turns,
                 run_config=run_config,
@@ -396,6 +466,86 @@ class IncidentAgentRuntime:
     async def __aexit__(self, exc_type, exc, tb) -> None:
         await self.close()
 
+
+def _deployment_from_report(report: AgentIncidentReport) -> str | None:
+    for resource in report.affected_resources:
+        value = resource.strip()
+
+        if value.lower().startswith("deployment/"):
+            return value.split("/", 1)[1]
+
+    return None
+
+
+def _select_remediation_action(
+        report: AgentIncidentReport,
+    ) -> _RemediationSelection | None:
+        deployment_name = _deployment_from_report(report)
+
+        if not deployment_name:
+            return None
+
+        remediation_text = " ".join(report.remediation).lower()
+
+        if "rollback" in remediation_text:
+            return _RemediationSelection(
+                tool_name="k8s_rollback_deployment",
+                deployment_name=deployment_name,
+            )
+
+        if (
+            "restart deployment" in remediation_text
+            or "restart the deployment" in remediation_text
+        ):
+            return _RemediationSelection(
+                tool_name="k8s_restart_deployment",
+                deployment_name=deployment_name,
+            )
+
+        scale_match = re.search(
+            r"\bscale\b[^.]*?\bto\s+(\d+)\b",
+            remediation_text,
+        )
+
+        if scale_match:
+            return _RemediationSelection(
+                tool_name="k8s_scale_deployment",
+                deployment_name=deployment_name,
+                replicas=int(scale_match.group(1)),
+            )
+
+        return None
+
+
+def _build_action_prompt(
+        selection: _RemediationSelection,
+        namespace: str,
+    ) -> str:
+        replicas = ""
+
+        if selection.replicas is not None:
+            replicas = f"\nReplicas: {selection.replicas}"
+
+        return f"""
+    The investigation is complete and identified a supported remediation action.
+
+    You previously recommended this exact corrective action:
+    Tool: {selection.tool_name}
+    Namespace: {namespace}
+    Deployment: {selection.deployment_name}{replicas}
+
+    This is now the remediation execution turn.
+
+    You MUST call {selection.tool_name} before producing another final report.
+    Do not substitute a different mutating action.
+
+    The tool is human-approval protected. The runtime will pause before execution.
+    If the human approves it, execute the action, then use read-only Kubernetes
+    tools to verify recovery before returning the updated structured incident report.
+
+    If the human rejects it, do not attempt an alternative write action unless
+    the rejection explicitly requests one.
+    """.strip()
 
 
 def _usage_totals(result: Any) -> dict[str, int]:
