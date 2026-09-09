@@ -20,7 +20,7 @@ GITHUB_MCP_URL ?= http://localhost:8090/mcp
 	agent-setup agent-test agent-tools investigate investigate-1 agent-api build-agent-image phase3-check \
 	db-create db-init db-check rag-ingest rag-search rag-stats phase4-check \
 	eval-case eval-1 eval-2 eval-3 eval-4 phase5-check \
-	github-mcp-server smoke-github-mcp test-github-mcp github-health investigate-1-change investigate-2-change investigate-3-change investigate-4-change \
+	github-mcp-server github-mcp-server-live github-mcp-server-fixture smoke-github-mcp test-github-mcp github-health stamp-git-provenance deploy-base-live investigate-live investigate-1-change investigate-2-change investigate-3-change investigate-4-change \
 	eval-change-1 eval-change-2 eval-change-3 eval-change-4 phase6-check
 
 help:
@@ -75,7 +75,12 @@ help:
 	@echo ""
 
 	@echo "Phase 6 - GitHub deployment/source-change correlation"
-	@echo "  make github-mcp-server  - run the Go GitHub MCP server on localhost:8090 (fixture by default)"
+	@echo "  make github-mcp-server       - run GitHub MCP using .env mode (live is the project default)"
+	@echo "  make github-mcp-server-live  - run against RakeshSuvvari/opspilot using GitHub REST"
+	@echo "  make github-mcp-server-fixture - run deterministic incident fixture history"
+	@echo "  make deploy-base-live        - deploy healthy demo and stamp real Git commit provenance"
+	@echo "  make stamp-git-provenance    - annotate demo Deployments with the current real repo SHA"
+	@echo "  make investigate-live        - investigate current cluster with live GitHub correlation"
 	@echo "  make smoke-github-mcp   - list/call GitHub MCP tools without using OpenAI"
 	@echo "  make investigate-1-change - investigate INC-001 with GitHub correlation enabled"
 	@echo "  make investigate-2-change - investigate INC-002 with GitHub correlation enabled"
@@ -297,6 +302,42 @@ phase5-check: agent-test
 github-mcp-server:
 	@if [ -f .env ]; then set -a; source .env; set +a; fi; \
 		go run ./services/github-mcp-server/cmd/server
+
+github-mcp-server-live:
+	@if [ -f .env ]; then set -a; source .env; set +a; fi; \
+		OPSPILOT_GITHUB_MODE=live \
+		OPSPILOT_GITHUB_OWNER="$${OPSPILOT_GITHUB_OWNER:-RakeshSuvvari}" \
+		OPSPILOT_GITHUB_REPO="$${OPSPILOT_GITHUB_REPO:-opspilot}" \
+		go run ./services/github-mcp-server/cmd/server
+
+github-mcp-server-fixture:
+	@if [ -f .env ]; then set -a; source .env; set +a; fi; \
+		OPSPILOT_GITHUB_MODE=fixture go run ./services/github-mcp-server/cmd/server
+
+stamp-git-provenance:
+	@command -v git >/dev/null || (echo "git is required" && exit 1)
+	@if [ -f .env ]; then set -a; source .env; set +a; fi; \
+		owner="$${OPSPILOT_GITHUB_OWNER:-RakeshSuvvari}"; \
+		repo="$${OPSPILOT_GITHUB_REPO:-opspilot}"; \
+		current="$$(git rev-parse HEAD)"; \
+		previous="$$(git rev-parse HEAD^ 2>/dev/null || printf '%s' "$$current")"; \
+		if ! git diff --quiet || ! git diff --cached --quiet; then \
+			echo "WARNING: working tree has uncommitted changes; provenance records HEAD, not those changes."; \
+		fi; \
+		for deployment in checkout payment inventory; do \
+			kubectl annotate deployment/$$deployment -n $(NAMESPACE) --overwrite \
+				opspilot.dev/repository="$$owner/$$repo" \
+				opspilot.dev/revision="$$current" \
+				opspilot.dev/previous-revision="$$previous" >/dev/null; \
+		done; \
+		echo "Stamped $$owner/$$repo provenance: $$previous -> $$current"
+
+deploy-base-live: deploy-base stamp-git-provenance
+	@echo "Healthy demo deployment now carries real GitHub provenance."
+
+investigate-live: agent-setup
+	@if [ -f .env ]; then set -a; source .env; set +a; fi; \
+		OPSPILOT_GITHUB_ENABLED=true $(AGENT_PYTHON) -m opspilot_agent.cli investigate --namespace $(NAMESPACE) --query "$(QUERY) Correlate any relevant deployed revision with the configured live GitHub repository when source-change evidence is useful."
 
 github-health:
 	curl -s http://localhost:8090/healthz

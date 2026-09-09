@@ -17,7 +17,7 @@ import (
 	"github.com/opspilot/opspilot/services/github-mcp-server/internal/tools"
 )
 
-const version = "0.6.0"
+const version = "0.6.1"
 
 func main() {
 	cfg := config.Load()

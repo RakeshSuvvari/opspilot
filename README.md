@@ -226,3 +226,26 @@ make test-github-mcp
 ## Next milestone
 
 After Phase 6, the highest-value next step is human-in-the-loop remediation: proposed rollback/restart/scale actions behind explicit approval, restricted RBAC, and post-action verification.
+
+
+### Live personal GitHub repository
+
+Phase 6 is configured for `RakeshSuvvari/opspilot` in `.env.example`. Because the repository is public, `GITHUB_TOKEN` is optional; a fine-grained read-only token is recommended for higher REST API limits.
+
+Run the real repository path with:
+
+```bash
+make github-mcp-server-live
+make github-health
+make smoke-github-mcp
+```
+
+For a healthy deployment whose images were built from the current checkout, stamp real source provenance after deployment:
+
+```bash
+make deploy-base-live
+```
+
+This records `git rev-parse HEAD` and its parent as Deployment annotations. If the working tree is dirty, OpsPilot prints a warning because the built bytes may not exactly match the recorded commit.
+
+The `eval-change-*` targets intentionally continue to use fixture history until equivalent incident-producing commits/PRs exist in the real repository. Do not treat unrelated real commits as causal evidence for those injected failures.

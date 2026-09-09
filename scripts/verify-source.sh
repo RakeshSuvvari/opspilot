@@ -61,3 +61,8 @@ grep -q '"INC-001-GIT"' "${ROOT_DIR}/evals/cases/incidents-phase6.jsonl"
 grep -q 'opspilot.dev/revision' "${ROOT_DIR}/demo/kubernetes/base/payment.yaml"
 
 echo "All source checks passed."
+
+grep -q 'OPSPILOT_GITHUB_OWNER=RakeshSuvvari' "${ROOT_DIR}/.env.example"
+grep -q 'OPSPILOT_GITHUB_REPO=opspilot' "${ROOT_DIR}/.env.example"
+grep -q '^stamp-git-provenance:' "${ROOT_DIR}/Makefile"
+grep -q '^github-mcp-server-live:' "${ROOT_DIR}/Makefile"
