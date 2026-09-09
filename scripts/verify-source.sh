@@ -62,7 +62,21 @@ grep -q 'opspilot.dev/revision' "${ROOT_DIR}/demo/kubernetes/base/payment.yaml"
 
 echo "All source checks passed."
 
-grep -q 'OPSPILOT_GITHUB_OWNER=RakeshSuvvari' "${ROOT_DIR}/.env.example"
-grep -q 'OPSPILOT_GITHUB_REPO=opspilot' "${ROOT_DIR}/.env.example"
+grep -q 'OPSPILOT_GITHUB_OWNER=RakeshSuvvari' "${ROOT_DIR}/.env"
+grep -q 'OPSPILOT_GITHUB_REPO=opspilot' "${ROOT_DIR}/.env"
 grep -q '^stamp-git-provenance:' "${ROOT_DIR}/Makefile"
 grep -q '^github-mcp-server-live:' "${ROOT_DIR}/Makefile"
+
+echo "==> Phase 7 remediation surface"
+grep -q 'OPSPILOT_REMEDIATION_ENABLED=false' "${ROOT_DIR}/.env"
+grep -q 'k8s_restart_deployment' "${ROOT_DIR}/services/k8s-mcp-server/internal/tools/tools.go"
+grep -q 'k8s_scale_deployment' "${ROOT_DIR}/services/k8s-mcp-server/internal/tools/tools.go"
+grep -q 'k8s_rollback_deployment' "${ROOT_DIR}/services/k8s-mcp-server/internal/tools/tools.go"
+test -s "${ROOT_DIR}/infra/kubernetes/opspilot/k8s-mcp-server/rbac-remediation.yaml"
+grep -q 'resources: \["deployments"\]' "${ROOT_DIR}/infra/kubernetes/opspilot/k8s-mcp-server/rbac-remediation.yaml"
+if grep -q 'verbs:.*delete' "${ROOT_DIR}/infra/kubernetes/opspilot/k8s-mcp-server/rbac-remediation.yaml"; then
+  echo "Phase 7 remediation RBAC must not grant delete." >&2
+  exit 1
+fi
+
+echo "Phase 7 remediation source checks passed."

@@ -17,11 +17,12 @@ GITHUB_MCP_URL ?= http://localhost:8090/mcp
 
 .PHONY: help verify cluster-up cluster-down build-images load-images deploy-base reset-demo status logs-checkout logs-payment logs-inventory incident-1 incident-2 incident-3 incident-4 \
 	build-k8s-mcp-image load-k8s-mcp-image deploy-k8s-mcp restart-k8s-mcp restore-k8s-mcp-rbac status-k8s-mcp logs-k8s-mcp port-forward-k8s-mcp test-k8s-mcp smoke-k8s-mcp phase2-up \
-	agent-setup agent-test agent-tools investigate investigate-1 agent-api build-agent-image phase3-check \
+	agent-setup agent-test agent-tools agent-tools-remediation investigate investigate-1 agent-api build-agent-image phase3-check \
 	db-create db-init db-check rag-ingest rag-search rag-stats phase4-check \
 	eval-case eval-1 eval-2 eval-3 eval-4 phase5-check \
 	github-mcp-server github-mcp-server-live github-mcp-server-fixture smoke-github-mcp test-github-mcp github-health stamp-git-provenance deploy-base-live investigate-live investigate-1-change investigate-2-change investigate-3-change investigate-4-change \
-	eval-change-1 eval-change-2 eval-change-3 eval-change-4 phase6-check
+	eval-change-1 eval-change-2 eval-change-3 eval-change-4 phase6-check \
+	enable-remediation disable-remediation restore-k8s-remediation-rbac status-remediation phase7-up incident-1-rollout incident-2-rollout incident-3-rollout remediate remediate-1 phase7-check
 
 help:
 	@echo "OpsPilot"
@@ -88,6 +89,14 @@ help:
 	@echo "  make investigate-4-change - investigate INC-004 with GitHub correlation enabled"
 	@echo "  make eval-change-1      - Phase 6 change-aware evaluation for INC-001"
 	@echo "  make phase6-check       - source checks + Python tests + GitHub MCP formatting/tests"
+	@echo ""
+	@echo "Phase 7 - human-approved Kubernetes remediation"
+	@echo "  make phase7-up           - enable restart/scale/rollback tools plus least-privilege writer RBAC"
+	@echo "  make status-remediation  - verify writer permissions and confirm delete remains denied"
+	@echo "  make incident-1-rollout  - apply INC-001 over a healthy revision so rollback history exists"
+	@echo "  make remediate-1         - investigate, pause for exact approval, execute, then verify"
+	@echo "  make disable-remediation - disable write tools and remove writer RBAC"
+	@echo "  make phase7-check        - source checks + Phase 7 tests"
 	@echo ""
 	@echo "  make cluster-down        - delete local cluster"
 
@@ -227,6 +236,10 @@ agent-test: agent-setup
 agent-tools: agent-setup
 	@if [ -f .env ]; then set -a; source .env; set +a; fi; \
 		$(AGENT_PYTHON) -m opspilot_agent.cli tools
+
+agent-tools-remediation: agent-setup
+	@if [ -f .env ]; then set -a; source .env; set +a; fi; \
+		OPSPILOT_REMEDIATION_ENABLED=true $(AGENT_PYTHON) -m opspilot_agent.cli tools --remediation
 
 investigate: agent-setup
 	@if [ -f .env ]; then set -a; source .env; set +a; fi; \
@@ -383,3 +396,90 @@ eval-change-4: agent-setup
 phase6-check: agent-test
 	./scripts/verify-source.sh
 	@echo "Phase 6 source checks passed. Start make github-mcp-server in another terminal, then use make investigate-1-change."
+
+# Phase 7 - human-approved Kubernetes remediation
+enable-remediation:
+	kubectl apply -f infra/kubernetes/opspilot/k8s-mcp-server/rbac-remediation.yaml
+	@if [ -f .env ]; then set -a; source .env; set +a; fi; \
+		kubectl set env deployment/k8s-mcp-server -n $(SYSTEM_NAMESPACE) \
+			OPSPILOT_K8S_WRITE_ENABLED=true \
+			OPSPILOT_K8S_MAX_SCALE_REPLICAS="$${OPSPILOT_REMEDIATION_MAX_REPLICAS:-10}"
+	kubectl rollout status deployment/k8s-mcp-server -n $(SYSTEM_NAMESPACE) --timeout=90s
+	@echo "Phase 7 Kubernetes write tools enabled. Mutating agent calls still require human approval."
+
+disable-remediation:
+	-kubectl set env deployment/k8s-mcp-server -n $(SYSTEM_NAMESPACE) OPSPILOT_K8S_WRITE_ENABLED=false
+	-kubectl delete rolebinding/opspilot-k8s-remediator role/opspilot-k8s-remediator -n $(NAMESPACE) --ignore-not-found=true
+	kubectl rollout status deployment/k8s-mcp-server -n $(SYSTEM_NAMESPACE) --timeout=90s
+	@echo "Phase 7 Kubernetes write tools disabled and remediation RBAC removed."
+
+restore-k8s-remediation-rbac:
+	@if kubectl get namespace $(SYSTEM_NAMESPACE) >/dev/null 2>&1; then \
+		kubectl apply -f infra/kubernetes/opspilot/k8s-mcp-server/rbac-remediation.yaml >/dev/null; \
+		echo "Restored OpsPilot remediation RBAC in $(NAMESPACE)."; \
+	fi
+
+status-remediation:
+	@echo "=== MCP tool server ==="
+	kubectl get deployment,pod -n $(SYSTEM_NAMESPACE) -l app=k8s-mcp-server -o wide
+	@echo
+	@echo "=== Remediation RBAC ==="
+	@printf "patch deployments: "
+	@kubectl auth can-i patch deployments -n $(NAMESPACE) --as=system:serviceaccount:$(SYSTEM_NAMESPACE):k8s-mcp-server || true
+	@printf "update deployment scale: "
+	@kubectl auth can-i update deployments/scale -n $(NAMESPACE) --as=system:serviceaccount:$(SYSTEM_NAMESPACE):k8s-mcp-server || true
+	@printf "list replicasets: "
+	@kubectl auth can-i list replicasets -n $(NAMESPACE) --as=system:serviceaccount:$(SYSTEM_NAMESPACE):k8s-mcp-server || true
+	@printf "delete deployments: "
+	@kubectl auth can-i delete deployments -n $(NAMESPACE) --as=system:serviceaccount:$(SYSTEM_NAMESPACE):k8s-mcp-server || true
+
+phase7-up: phase2-up enable-remediation
+	@echo "Phase 7 remediation backend is ready. Restart make port-forward-k8s-mcp if it was already running."
+
+incident-1-rollout:
+	-kubectl delete namespace $(NAMESPACE) --ignore-not-found=true --wait=true
+	kubectl apply -k demo/kubernetes/base
+	@$(MAKE) --no-print-directory restore-k8s-mcp-rbac
+	@$(MAKE) --no-print-directory restore-k8s-remediation-rbac
+	kubectl rollout status deployment/payment -n $(NAMESPACE) --timeout=60s
+	kubectl apply -k demo/incidents/inc-001-missing-database-url
+	@$(MAKE) --no-print-directory restore-k8s-mcp-rbac
+	@$(MAKE) --no-print-directory restore-k8s-remediation-rbac
+	@echo "INC-001 was rolled out over a healthy payment revision, preserving ReplicaSet history for rollback."
+
+incident-2-rollout:
+	-kubectl delete namespace $(NAMESPACE) --ignore-not-found=true --wait=true
+	kubectl apply -k demo/kubernetes/base
+	@$(MAKE) --no-print-directory restore-k8s-mcp-rbac
+	@$(MAKE) --no-print-directory restore-k8s-remediation-rbac
+	kubectl rollout status deployment/checkout -n $(NAMESPACE) --timeout=60s
+	kubectl apply -k demo/incidents/inc-002-oomkilled
+	@$(MAKE) --no-print-directory restore-k8s-mcp-rbac
+	@$(MAKE) --no-print-directory restore-k8s-remediation-rbac
+	@echo "INC-002 was rolled out over a healthy checkout revision, preserving ReplicaSet history for rollback."
+
+incident-3-rollout:
+	-kubectl delete namespace $(NAMESPACE) --ignore-not-found=true --wait=true
+	kubectl apply -k demo/kubernetes/base
+	@$(MAKE) --no-print-directory restore-k8s-mcp-rbac
+	@$(MAKE) --no-print-directory restore-k8s-remediation-rbac
+	kubectl rollout status deployment/inventory -n $(NAMESPACE) --timeout=60s
+	kubectl apply -k demo/incidents/inc-003-broken-readiness
+	@$(MAKE) --no-print-directory restore-k8s-mcp-rbac
+	@$(MAKE) --no-print-directory restore-k8s-remediation-rbac
+	@echo "INC-003 was rolled out over a healthy inventory revision, preserving ReplicaSet history for rollback."
+
+remediate: agent-setup
+	@if [ -f .env ]; then set -a; source .env; set +a; fi; \
+		OPSPILOT_REMEDIATION_ENABLED=true $(AGENT_PYTHON) -m opspilot_agent.cli remediate --namespace $(NAMESPACE) --query "$(QUERY)"
+
+remediate-1: agent-setup
+	@if [ -f .env ]; then set -a; source .env; set +a; fi; \
+		OPSPILOT_REMEDIATION_ENABLED=true $(AGENT_PYTHON) -m opspilot_agent.cli remediate --namespace $(NAMESPACE) --query "Diagnose why payment is repeatedly restarting. If the failure is a newly rolled out deployment regression and rollback is supported by live revision history, request the safest corrective action, then verify recovery after approval."
+
+phase7-check: agent-test
+	./scripts/verify-source.sh
+	@grep -q 'OPSPILOT_REMEDIATION_ENABLED=false' .env
+	@grep -q 'k8s_rollback_deployment' services/k8s-mcp-server/internal/tools/tools.go
+	@test -s infra/kubernetes/opspilot/k8s-mcp-server/rbac-remediation.yaml
+	@echo "Phase 7 source checks passed. Next: make phase7-up && make incident-1-rollout && make remediate-1"

@@ -127,3 +127,31 @@ type DeploymentCondition struct {
 	Message            string `json:"message,omitempty"`
 	LastTransitionTime string `json:"last_transition_time,omitempty"`
 }
+
+type RestartDeploymentResult struct {
+	Namespace          string `json:"namespace"`
+	Deployment         string `json:"deployment"`
+	RestartedAt        string `json:"restarted_at"`
+	PreviousGeneration int64  `json:"previous_generation"`
+	Generation         int64  `json:"generation"`
+}
+
+type ScaleDeploymentResult struct {
+	Namespace        string `json:"namespace"`
+	Deployment       string `json:"deployment"`
+	PreviousReplicas int32  `json:"previous_replicas"`
+	Replicas         int32  `json:"replicas"`
+	ScaledAt         string `json:"scaled_at"`
+}
+
+type RollbackDeploymentResult struct {
+	Namespace          string `json:"namespace"`
+	Deployment         string `json:"deployment"`
+	FromRevision       int64  `json:"from_revision"`
+	ToRevision         int64  `json:"to_revision"`
+	TargetReplicaSet   string `json:"target_replicaset"`
+	Generation         int64  `json:"generation"`
+	FromSourceRevision string `json:"from_source_revision,omitempty"`
+	ToSourceRevision   string `json:"to_source_revision,omitempty"`
+	RolledBackAt       string `json:"rolled_back_at"`
+}

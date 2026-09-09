@@ -45,6 +45,8 @@ class SchemaTests(unittest.TestCase):
         )
         self.assertEqual(report.status, IncidentStatus.INCIDENT)
         self.assertEqual(report.confidence, Confidence.HIGH)
+        self.assertEqual(report.remediation_actions, [])
+        self.assertEqual(report.metrics.approval_requests, 0)
 
 
 if __name__ == "__main__":

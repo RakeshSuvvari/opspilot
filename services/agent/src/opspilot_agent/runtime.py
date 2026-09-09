@@ -1,26 +1,48 @@
 from __future__ import annotations
 
+import inspect
+import json
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from time import perf_counter
+from typing import Any
 from uuid import uuid4
 
 from agents import Agent, RunConfig, Runner, set_tracing_disabled
-from agents.mcp import MCPServerStreamableHttp
+from agents.mcp import MCPServerStreamableHttp, create_static_tool_filter
 
 from .assessment import assess_evidence
 from .config import Settings
-from .observability import extract_tool_records, ordered_unique_tool_names, save_run_artifact
-from .prompts import SYSTEM_INSTRUCTIONS, build_investigation_prompt
+from .observability import ToolRecord, extract_tool_records, ordered_unique_tool_names, save_run_artifact
+from .prompts import (
+    REMEDIATION_INSTRUCTIONS,
+    SYSTEM_INSTRUCTIONS,
+    build_investigation_prompt,
+    build_remediation_prompt,
+)
 from .rag.tool import build_search_knowledge_tool
-from .schemas import AgentIncidentReport, IncidentReport, RunMetrics
+from .schemas import (
+    AgentIncidentReport,
+    ApprovalRequest,
+    IncidentReport,
+    RemediationAction,
+    RunMetrics,
+)
 from .timeline import build_timeline
 
-EXPECTED_K8S_MCP_TOOLS = {
+READ_K8S_MCP_TOOLS = {
     "k8s_list_pods",
     "k8s_get_pod",
     "k8s_get_pod_logs",
     "k8s_get_events",
     "k8s_get_deployment",
+}
+
+REMEDIATION_K8S_MCP_TOOLS = {
+    "k8s_restart_deployment",
+    "k8s_scale_deployment",
+    "k8s_rollback_deployment",
 }
 
 EXPECTED_GITHUB_MCP_TOOLS = {
@@ -31,22 +53,49 @@ EXPECTED_GITHUB_MCP_TOOLS = {
     "github_get_pull_request",
 }
 
+ApprovalHandler = Callable[[ApprovalRequest], bool | Awaitable[bool]]
+
+
+@dataclass(frozen=True)
+class _ApprovalDecision:
+    request: ApprovalRequest
+    approved: bool
+
 
 class IncidentAgentRuntime:
     def __init__(self, settings: Settings):
         self.settings = settings
         self._started = False
+
+        common_params = {
+            "url": settings.k8s_mcp_url,
+            "timeout": settings.mcp_timeout_seconds,
+        }
         self._k8s_mcp = MCPServerStreamableHttp(
             name="OpsPilot Kubernetes MCP",
-            params={
-                "url": settings.k8s_mcp_url,
-                "timeout": settings.mcp_timeout_seconds,
-            },
+            params=common_params,
             cache_tools_list=True,
             use_structured_content=True,
             max_retry_attempts=settings.mcp_retries,
             require_approval="never",
+            tool_filter=create_static_tool_filter(
+                blocked_tool_names=sorted(REMEDIATION_K8S_MCP_TOOLS),
+            ),
         )
+
+        self._k8s_remediation_mcp = None
+        if settings.remediation_enabled:
+            self._k8s_remediation_mcp = MCPServerStreamableHttp(
+                name="OpsPilot Kubernetes MCP - Remediation",
+                params=common_params,
+                cache_tools_list=True,
+                use_structured_content=True,
+                max_retry_attempts=settings.mcp_retries,
+                require_approval={
+                    "always": {"tool_names": sorted(REMEDIATION_K8S_MCP_TOOLS)},
+                },
+            )
+
         self._github_mcp = None
         if settings.github_enabled:
             self._github_mcp = MCPServerStreamableHttp(
@@ -65,18 +114,32 @@ class IncidentAgentRuntime:
         if settings.rag_enabled:
             local_tools.append(build_search_knowledge_tool(settings))
 
-        mcp_servers = [self._k8s_mcp]
+        read_servers = [self._k8s_mcp]
         if self._github_mcp is not None:
-            mcp_servers.append(self._github_mcp)
+            read_servers.append(self._github_mcp)
 
         self._agent = Agent(
             name="OpsPilot Incident Investigator",
             instructions=SYSTEM_INSTRUCTIONS,
             model=settings.openai_model,
-            mcp_servers=mcp_servers,
+            mcp_servers=read_servers,
             tools=local_tools,
             output_type=AgentIncidentReport,
         )
+
+        self._remediation_agent = None
+        if self._k8s_remediation_mcp is not None:
+            remediation_servers = [self._k8s_remediation_mcp]
+            if self._github_mcp is not None:
+                remediation_servers.append(self._github_mcp)
+            self._remediation_agent = Agent(
+                name="OpsPilot Incident Remediator",
+                instructions=REMEDIATION_INSTRUCTIONS,
+                model=settings.openai_model,
+                mcp_servers=remediation_servers,
+                tools=local_tools,
+                output_type=AgentIncidentReport,
+            )
 
     async def start(self) -> None:
         if self._started:
@@ -85,39 +148,52 @@ class IncidentAgentRuntime:
         set_tracing_disabled(self.settings.disable_tracing)
         try:
             await self._k8s_mcp.connect()
+            if self._k8s_remediation_mcp is not None:
+                await self._k8s_remediation_mcp.connect()
             if self._github_mcp is not None:
                 await self._github_mcp.connect()
             self._started = True
 
             available_k8s = set(await self.list_k8s_mcp_tools())
-            missing_k8s = EXPECTED_K8S_MCP_TOOLS - available_k8s
+            missing_k8s = READ_K8S_MCP_TOOLS - available_k8s
             if missing_k8s:
-                missing_tools = ", ".join(sorted(missing_k8s))
-                raise RuntimeError(f"Kubernetes MCP server is missing tools: {missing_tools}")
+                raise RuntimeError(
+                    "Kubernetes MCP server is missing tools: " + ", ".join(sorted(missing_k8s))
+                )
+
+            if self._k8s_remediation_mcp is not None:
+                remediation_tools = set(await self.list_remediation_mcp_tools())
+                expected = READ_K8S_MCP_TOOLS | REMEDIATION_K8S_MCP_TOOLS
+                missing = expected - remediation_tools
+                if missing:
+                    raise RuntimeError(
+                        "Kubernetes MCP remediation server is missing tools: "
+                        + ", ".join(sorted(missing))
+                        + ". Enable Phase 7 write tools on the Go MCP server first."
+                    )
 
             if self._github_mcp is not None:
                 available_github = set(await self.list_github_mcp_tools())
                 missing_github = EXPECTED_GITHUB_MCP_TOOLS - available_github
                 if missing_github:
-                    missing_tools = ", ".join(sorted(missing_github))
-                    raise RuntimeError(f"GitHub MCP server is missing tools: {missing_tools}")
+                    raise RuntimeError(
+                        "GitHub MCP server is missing tools: "
+                        + ", ".join(sorted(missing_github))
+                    )
         except Exception:
             await self.close()
             raise
 
     async def close(self) -> None:
-        if not self._started:
-            return
+        servers = [self._github_mcp, self._k8s_remediation_mcp, self._k8s_mcp]
         errors: list[Exception] = []
-        if self._github_mcp is not None:
+        for server in servers:
+            if server is None:
+                continue
             try:
-                await self._github_mcp.cleanup()
-            except Exception as exc:  # pragma: no cover - cleanup best effort
+                await server.cleanup()
+            except Exception as exc:  # pragma: no cover
                 errors.append(exc)
-        try:
-            await self._k8s_mcp.cleanup()
-        except Exception as exc:  # pragma: no cover - cleanup best effort
-            errors.append(exc)
         self._started = False
         if errors:
             raise errors[0]
@@ -125,32 +201,68 @@ class IncidentAgentRuntime:
     async def list_k8s_mcp_tools(self) -> list[str]:
         if not self._started:
             raise RuntimeError("IncidentAgentRuntime is not started")
-        tools = await self._k8s_mcp.list_tools()
-        return sorted(tool.name for tool in tools)
+        return sorted(tool.name for tool in await self._k8s_mcp.list_tools())
+
+    async def list_remediation_mcp_tools(self) -> list[str]:
+        if not self._started:
+            raise RuntimeError("IncidentAgentRuntime is not started")
+        if self._k8s_remediation_mcp is None:
+            return []
+        return sorted(tool.name for tool in await self._k8s_remediation_mcp.list_tools())
 
     async def list_github_mcp_tools(self) -> list[str]:
         if not self._started:
             raise RuntimeError("IncidentAgentRuntime is not started")
         if self._github_mcp is None:
             return []
-        tools = await self._github_mcp.list_tools()
-        return sorted(tool.name for tool in tools)
+        return sorted(tool.name for tool in await self._github_mcp.list_tools())
 
-    async def list_mcp_tools(self) -> list[str]:
-        tools = await self.list_k8s_mcp_tools()
+    async def list_tools(self, include_remediation: bool = False) -> list[str]:
+        tools = (
+            await self.list_remediation_mcp_tools()
+            if include_remediation and self._k8s_remediation_mcp is not None
+            else await self.list_k8s_mcp_tools()
+        )
         tools.extend(await self.list_github_mcp_tools())
-        return sorted(tools)
-
-    async def list_tools(self) -> list[str]:
-        tools = await self.list_mcp_tools()
         if self.settings.rag_enabled:
             tools.append("search_knowledge")
-        return sorted(tools)
+        return sorted(set(tools))
 
     async def investigate(self, query: str, namespace: str | None = None) -> IncidentReport:
+        return await self._run(
+            query=query,
+            namespace=namespace,
+            remediation=False,
+            approval_handler=None,
+        )
+
+    async def remediate(
+        self,
+        query: str,
+        namespace: str | None,
+        approval_handler: ApprovalHandler,
+    ) -> IncidentReport:
+        if not self.settings.remediation_enabled or self._remediation_agent is None:
+            raise ValueError(
+                "Human-approved remediation is disabled. Set OPSPILOT_REMEDIATION_ENABLED=true "
+                "and enable the Go MCP write tools/RBAC with make phase7-up."
+            )
+        return await self._run(
+            query=query,
+            namespace=namespace,
+            remediation=True,
+            approval_handler=approval_handler,
+        )
+
+    async def _run(
+        self,
+        query: str,
+        namespace: str | None,
+        remediation: bool,
+        approval_handler: ApprovalHandler | None,
+    ) -> IncidentReport:
         if not self._started:
             raise RuntimeError("IncidentAgentRuntime is not started")
-
         self.settings.require_openai_key()
         target_namespace = (namespace or self.settings.default_namespace).strip()
         if not target_namespace:
@@ -159,56 +271,95 @@ class IncidentAgentRuntime:
         investigation_id = f"inv-{uuid4().hex[:12]}"
         started_at = datetime.now(timezone.utc)
         started = perf_counter()
+        agent = self._remediation_agent if remediation else self._agent
+        assert agent is not None
+        prompt = (
+            build_remediation_prompt(query, target_namespace, self.settings.github_enabled)
+            if remediation
+            else build_investigation_prompt(query, target_namespace, self.settings.github_enabled)
+        )
+        run_config = RunConfig(
+            workflow_name=(
+                "OpsPilot Human-Approved Remediation"
+                if remediation
+                else "OpsPilot Incident Investigation"
+            ),
+            trace_include_sensitive_data=self.settings.trace_sensitive_data,
+            trace_metadata={
+                "investigation_id": investigation_id,
+                "namespace": target_namespace,
+                "model": self.settings.openai_model,
+                "rag_enabled": str(self.settings.rag_enabled).lower(),
+                "github_enabled": str(self.settings.github_enabled).lower(),
+                "remediation_enabled": str(remediation).lower(),
+                "component": "opspilot-agent",
+                "phase": "7",
+            },
+        )
 
         result = await Runner.run(
-            self._agent,
-            build_investigation_prompt(
-                query,
-                target_namespace,
-                github_enabled=self.settings.github_enabled,
-            ),
+            agent,
+            prompt,
             max_turns=self.settings.max_turns,
-            run_config=RunConfig(
-                workflow_name="OpsPilot Incident Investigation",
-                trace_include_sensitive_data=self.settings.trace_sensitive_data,
-                trace_metadata={
-                    "investigation_id": investigation_id,
-                    "namespace": target_namespace,
-                    "model": self.settings.openai_model,
-                    "rag_enabled": str(self.settings.rag_enabled).lower(),
-                    "github_enabled": str(self.settings.github_enabled).lower(),
-                    "component": "opspilot-agent",
-                    "phase": "6",
-                },
-            ),
+            run_config=run_config,
         )
+        usage_totals = _usage_totals(result)
+        records: list[ToolRecord] = []
+        decisions: list[_ApprovalDecision] = []
+        records = _merge_tool_records(records, extract_tool_records(result.new_items))
+
+        while remediation and result.interruptions:
+            if approval_handler is None:
+                raise RuntimeError("remediation run requires an approval handler")
+            state = result.to_state()
+            for interruption in result.interruptions:
+                request = _approval_request(interruption)
+                answer = approval_handler(request)
+                approved = await answer if inspect.isawaitable(answer) else bool(answer)
+                decisions.append(_ApprovalDecision(request=request, approved=approved))
+                if approved:
+                    state.approve(interruption, always_approve=False)
+                else:
+                    state.reject(
+                        interruption,
+                        rejection_message=(
+                            "The human reviewer rejected this Kubernetes remediation action. "
+                            "Do not execute it; continue with safe read-only verification/recommendations."
+                        ),
+                    )
+            result = await Runner.run(
+                agent,
+                state,
+                max_turns=self.settings.max_turns,
+                run_config=run_config,
+            )
+            _accumulate_usage(usage_totals, result)
+            records = _merge_tool_records(records, extract_tool_records(result.new_items))
 
         completed_at = datetime.now(timezone.utc)
         elapsed_ms = int((perf_counter() - started) * 1000)
-
         output = result.final_output
-        if isinstance(output, AgentIncidentReport):
-            agent_report = output
-        else:
-            agent_report = AgentIncidentReport.model_validate(output)
+        agent_report = output if isinstance(output, AgentIncidentReport) else AgentIncidentReport.model_validate(output)
 
-        tool_records = extract_tool_records(result.new_items)
-        actual_tools = ordered_unique_tool_names(tool_records)
-        timeline = build_timeline(tool_records, max_events=self.settings.timeline_max_events)
+        actual_tools = ordered_unique_tool_names(records)
+        timeline = build_timeline(records, max_events=self.settings.timeline_max_events)
         assessment = assess_evidence(agent_report, actual_tools)
+        actions = _build_remediation_actions(decisions, records)
 
-        usage = result.context_wrapper.usage
         metrics = RunMetrics(
             investigation_id=investigation_id,
             started_at=started_at.isoformat().replace("+00:00", "Z"),
             completed_at=completed_at.isoformat().replace("+00:00", "Z"),
             elapsed_ms=elapsed_ms,
-            model_requests=usage.requests,
-            input_tokens=usage.input_tokens,
-            output_tokens=usage.output_tokens,
-            total_tokens=usage.total_tokens,
-            tool_call_count=len(tool_records),
+            model_requests=usage_totals["requests"],
+            input_tokens=usage_totals["input_tokens"],
+            output_tokens=usage_totals["output_tokens"],
+            total_tokens=usage_totals["total_tokens"],
+            tool_call_count=len(records),
             unique_tool_count=len(actual_tools),
+            approval_requests=len(decisions),
+            approved_actions=sum(1 for decision in decisions if decision.approved),
+            rejected_actions=sum(1 for decision in decisions if not decision.approved),
         )
 
         report = IncidentReport(
@@ -226,17 +377,16 @@ class IncidentAgentRuntime:
             tools_used=actual_tools,
             assessment=assessment,
             metrics=metrics,
+            remediation_actions=actions,
         )
-
         if self.settings.save_run_artifacts:
             save_run_artifact(
                 self.settings.run_artifact_dir,
                 report,
                 query=query,
                 model=self.settings.openai_model,
-                tool_records=tool_records,
+                tool_records=records,
             )
-
         return report
 
     async def __aenter__(self) -> "IncidentAgentRuntime":
@@ -245,3 +395,104 @@ class IncidentAgentRuntime:
 
     async def __aexit__(self, exc_type, exc, tb) -> None:
         await self.close()
+
+
+
+def _usage_totals(result: Any) -> dict[str, int]:
+    usage = result.context_wrapper.usage
+    return {
+        "requests": int(usage.requests),
+        "input_tokens": int(usage.input_tokens),
+        "output_tokens": int(usage.output_tokens),
+        "total_tokens": int(usage.total_tokens),
+    }
+
+
+def _accumulate_usage(totals: dict[str, int], result: Any) -> None:
+    current = _usage_totals(result)
+    for key, value in current.items():
+        totals[key] += value
+
+
+
+def _parse_arguments(raw: Any) -> dict[str, object]:
+    if isinstance(raw, dict):
+        return raw
+    if not isinstance(raw, str) or not raw.strip():
+        return {}
+    try:
+        value = json.loads(raw)
+    except json.JSONDecodeError:
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
+def _approval_request(interruption: Any) -> ApprovalRequest:
+    tool_name = getattr(interruption, "name", None) or getattr(interruption, "tool_name", None) or "unknown_tool"
+    arguments = _parse_arguments(getattr(interruption, "arguments", None))
+    call_id = getattr(interruption, "call_id", None)
+    if tool_name == "k8s_rollback_deployment":
+        risk, reason = "high", "Replaces the live Deployment pod template with a previous ReplicaSet revision."
+    elif tool_name == "k8s_scale_deployment":
+        replicas = arguments.get("replicas")
+        risk = "high" if replicas == 0 else "medium"
+        reason = "Changes live workload capacity and can affect availability/cost."
+    else:
+        risk, reason = "medium", "Restarts live workload pods by changing the Deployment pod template."
+    return ApprovalRequest(
+        call_id=call_id,
+        tool_name=tool_name,
+        arguments=arguments,
+        risk=risk,
+        reason=reason,
+    )
+
+
+def _merge_tool_records(existing: list[ToolRecord], new: list[ToolRecord]) -> list[ToolRecord]:
+    by_key: dict[str, ToolRecord] = {}
+    order: list[str] = []
+    for record in [*existing, *new]:
+        key = record.call_id or f"{record.name}:{json.dumps(record.arguments, sort_keys=True, default=str)}"
+        if key not in by_key:
+            order.append(key)
+            by_key[key] = record
+        elif record.output is not None:
+            by_key[key] = record
+    return [by_key[key] for key in order]
+
+
+def _build_remediation_actions(
+    decisions: list[_ApprovalDecision],
+    records: list[ToolRecord],
+) -> list[RemediationAction]:
+    by_call_id = {record.call_id: record for record in records if record.call_id}
+    actions: list[RemediationAction] = []
+    for decision in decisions:
+        req = decision.request
+        record = by_call_id.get(req.call_id) if req.call_id else None
+        if record is None and decision.approved:
+            for candidate in records:
+                if candidate.name == req.tool_name and candidate.arguments == req.arguments and candidate.output is not None:
+                    record = candidate
+                    break
+        resource_name = str(req.arguments.get("deployment_name", "unknown"))
+        namespace = str(req.arguments.get("namespace", "opspilot-demo"))
+        result = record.output if record is not None else None
+        if not decision.approved:
+            status = "rejected"
+        elif result is not None:
+            status = "executed"
+        else:
+            status = "approved_no_result"
+        actions.append(
+            RemediationAction(
+                call_id=req.call_id,
+                tool_name=req.tool_name,
+                resource=f"deployment/{namespace}/{resource_name}",
+                arguments=req.arguments,
+                approved=decision.approved,
+                status=status,
+                result=result,
+            )
+        )
+    return actions

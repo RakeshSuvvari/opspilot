@@ -71,5 +71,24 @@ class TimelineTests(unittest.TestCase):
         self.assertIn("Pull request #42", timeline[1].event)
 
 
+    def test_includes_human_approved_remediation_events(self):
+        records = [
+            ToolRecord(
+                name="k8s_rollback_deployment",
+                call_id="call-rb",
+                arguments={"deployment_name": "payment"},
+                output={
+                    "deployment": "payment",
+                    "from_revision": 2,
+                    "to_revision": 1,
+                    "rolled_back_at": "2026-09-09T10:05:00Z",
+                },
+            )
+        ]
+        timeline = build_timeline(records)
+        self.assertEqual(len(timeline), 1)
+        self.assertIn("Human-approved remediation rolled back Deployment payment", timeline[0].event)
+
+
 if __name__ == "__main__":
     unittest.main()

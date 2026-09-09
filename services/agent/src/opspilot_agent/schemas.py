@@ -48,6 +48,24 @@ class ChangeCorrelation(BaseModel):
     causal_link: str
 
 
+class ApprovalRequest(BaseModel):
+    call_id: str | None = None
+    tool_name: str
+    arguments: dict[str, object]
+    risk: str
+    reason: str
+
+
+class RemediationAction(BaseModel):
+    call_id: str | None = None
+    tool_name: str
+    resource: str
+    arguments: dict[str, object]
+    approved: bool
+    status: str
+    result: object | None = None
+
+
 class AgentIncidentReport(BaseModel):
     """Structured model output before OpsPilot's deterministic trust layer is applied."""
 
@@ -86,6 +104,9 @@ class RunMetrics(BaseModel):
     total_tokens: int = Field(ge=0)
     tool_call_count: int = Field(ge=0)
     unique_tool_count: int = Field(ge=0)
+    approval_requests: int = Field(default=0, ge=0)
+    approved_actions: int = Field(default=0, ge=0)
+    rejected_actions: int = Field(default=0, ge=0)
 
 
 class IncidentReport(BaseModel):
@@ -103,6 +124,7 @@ class IncidentReport(BaseModel):
     tools_used: list[str]
     assessment: EvidenceAssessment
     metrics: RunMetrics
+    remediation_actions: list[RemediationAction] = Field(default_factory=list)
 
 
 class InvestigationRequest(BaseModel):

@@ -1,0 +1,29 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: opspilot-k8s-remediator
+  namespace: opspilot-demo
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "patch", "update"]
+  - apiGroups: ["apps"]
+    resources: ["deployments/scale"]
+    verbs: ["get", "patch", "update"]
+  - apiGroups: ["apps"]
+    resources: ["replicasets"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: opspilot-k8s-remediator
+  namespace: opspilot-demo
+subjects:
+  - kind: ServiceAccount
+    name: k8s-mcp-server
+    namespace: opspilot-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: opspilot-k8s-remediator

@@ -13,6 +13,8 @@ class SettingsTests(unittest.TestCase):
         self.assertEqual(settings.k8s_mcp_url, "http://localhost:8080/mcp")
         self.assertFalse(settings.github_enabled)
         self.assertEqual(settings.github_mcp_url, "http://localhost:8090/mcp")
+        self.assertFalse(settings.remediation_enabled)
+        self.assertEqual(settings.remediation_max_replicas, 10)
         self.assertEqual(settings.default_namespace, "opspilot-demo")
         self.assertEqual(settings.max_turns, 12)
         self.assertFalse(settings.trace_sensitive_data)

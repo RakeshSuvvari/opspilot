@@ -39,6 +39,8 @@ class Settings:
     k8s_mcp_url: str
     github_enabled: bool
     github_mcp_url: str
+    remediation_enabled: bool
+    remediation_max_replicas: int
     default_namespace: str
     max_turns: int
     mcp_timeout_seconds: float
@@ -68,6 +70,8 @@ class Settings:
             k8s_mcp_url=os.getenv("OPSPILOT_K8S_MCP_URL", "http://localhost:8080/mcp").strip(),
             github_enabled=_env_bool("OPSPILOT_GITHUB_ENABLED", False),
             github_mcp_url=os.getenv("OPSPILOT_GITHUB_MCP_URL", "http://localhost:8090/mcp").strip(),
+            remediation_enabled=_env_bool("OPSPILOT_REMEDIATION_ENABLED", False),
+            remediation_max_replicas=_env_int("OPSPILOT_REMEDIATION_MAX_REPLICAS", 10, minimum=1),
             default_namespace=os.getenv("OPSPILOT_DEFAULT_NAMESPACE", "opspilot-demo").strip(),
             max_turns=_env_int("OPSPILOT_AGENT_MAX_TURNS", 12),
             mcp_timeout_seconds=_env_float("OPSPILOT_AGENT_MCP_TIMEOUT_SECONDS", 10.0),
@@ -102,6 +106,8 @@ class Settings:
             raise ValueError("OPENAI_MODEL cannot be empty")
         if not self.default_namespace:
             raise ValueError("OPSPILOT_DEFAULT_NAMESPACE cannot be empty")
+        if self.remediation_max_replicas > 50:
+            raise ValueError("OPSPILOT_REMEDIATION_MAX_REPLICAS must be <= 50")
 
         for name, url in (("OPSPILOT_K8S_MCP_URL", self.k8s_mcp_url), ("OPSPILOT_GITHUB_MCP_URL", self.github_mcp_url)):
             parsed = urlparse(url)

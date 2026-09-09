@@ -249,3 +249,67 @@ make deploy-base-live
 This records `git rev-parse HEAD` and its parent as Deployment annotations. If the working tree is dirty, OpsPilot prints a warning because the built bytes may not exactly match the recorded commit.
 
 The `eval-change-*` targets intentionally continue to use fixture history until equivalent incident-producing commits/PRs exist in the real repository. Do not treat unrelated real commits as causal evidence for those injected failures.
+
+## Phase 7 — Human-approved Kubernetes remediation
+
+Phase 7 adds a deliberately narrow write path to the existing Kubernetes MCP server. Read-only
+investigations remain the default. When remediation mode is enabled, the Go MCP server additionally
+publishes:
+
+- `k8s_restart_deployment`
+- `k8s_scale_deployment`
+- `k8s_rollback_deployment`
+
+The Python agent connects to these tools with OpenAI Agents SDK approval gating. A mutating MCP call
+pauses before execution, the CLI prints the exact tool name and arguments, and the action runs only
+after the operator explicitly approves it. Rejected actions are returned to the model as rejected and
+are recorded in the final report.
+
+The Kubernetes ServiceAccount receives write privileges only through a separate Phase 7 Role. It may
+patch/update Deployments, update Deployment scale, and read ReplicaSet history. It still cannot delete
+Deployments, edit Secrets, change RBAC, or mutate arbitrary Kubernetes resources.
+
+### Local Phase 7 flow
+
+```bash
+# Rebuild the Go MCP server, enable its write tools, and apply the narrow writer Role.
+make phase7-up
+
+# Existing port-forwards must be restarted because phase7-up recreates the MCP pod.
+make port-forward-k8s-mcp
+
+# Verify patch/update/list permissions while delete stays denied.
+make status-remediation
+
+# Create a real Kubernetes rollout regression rather than starting directly in a bad state.
+# This preserves a healthy ReplicaSet so rollback is meaningful.
+make incident-1-rollout
+
+# In another terminal, start the human-approved agent flow.
+make remediate-1
+```
+
+When the agent requests an action, OpsPilot shows a prompt similar to:
+
+```text
+HUMAN APPROVAL REQUIRED
+Tool:   k8s_rollback_deployment
+Risk:   HIGH
+Arguments:
+{
+  "namespace": "opspilot-demo",
+  "deployment_name": "payment"
+}
+Approve this exact Kubernetes action? [y/N]:
+```
+
+After approval, the run resumes from the paused agent state, executes the Go MCP tool, and instructs
+the agent to verify the new Deployment/pod state with the read-only Kubernetes tools before returning
+the final report. The report records approval counts and deterministic `remediation_actions` so an
+action cannot be presented as executed merely because the model recommended it.
+
+Disable the mutation surface when finished:
+
+```bash
+make disable-remediation
+```

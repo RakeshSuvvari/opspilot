@@ -101,6 +101,24 @@ def _pull_request_timeline(output: dict[str, Any], events: list[TimelineEvent]) 
         _append(events, output.get("merged_at"), f"Pull request #{number} merged: {title}.")
 
 
+def _remediation_timeline(name: str, output: dict[str, Any], events: list[TimelineEvent]) -> None:
+    deployment = output.get("deployment", "deployment")
+    if name == "k8s_restart_deployment":
+        _append(events, output.get("restarted_at"), f"Human-approved remediation restarted Deployment {deployment}.")
+    elif name == "k8s_scale_deployment":
+        _append(
+            events,
+            output.get("scaled_at"),
+            f"Human-approved remediation scaled Deployment {deployment} from {output.get('previous_replicas')} to {output.get('replicas')} replicas.",
+        )
+    elif name == "k8s_rollback_deployment":
+        _append(
+            events,
+            output.get("rolled_back_at"),
+            f"Human-approved remediation rolled back Deployment {deployment} from revision {output.get('from_revision')} to {output.get('to_revision')}.",
+        )
+
+
 def build_timeline(records: list[ToolRecord], max_events: int = 20) -> list[TimelineEvent]:
     events: list[TimelineEvent] = []
     for record in records:
@@ -123,6 +141,8 @@ def build_timeline(records: list[ToolRecord], max_events: int = 20) -> list[Time
             _compare_timeline(output, events)
         elif record.name == "github_get_pull_request":
             _pull_request_timeline(output, events)
+        elif record.name in {"k8s_restart_deployment", "k8s_scale_deployment", "k8s_rollback_deployment"}:
+            _remediation_timeline(record.name, output, events)
 
     deduplicated: dict[tuple[str, str], TimelineEvent] = {}
     for event in events:

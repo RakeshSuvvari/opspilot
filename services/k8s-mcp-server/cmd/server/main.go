@@ -17,7 +17,7 @@ import (
 	"github.com/opspilot/opspilot/services/k8s-mcp-server/internal/tools"
 )
 
-const version = "0.2.1"
+const version = "0.7.0"
 
 func main() {
 	cfg := config.Load()
@@ -33,7 +33,7 @@ func main() {
 		Name:    "opspilot-k8s",
 		Version: version,
 	}, nil)
-	tools.New(client, cfg.DefaultNamespace).Register(mcpServer)
+	tools.New(client, cfg.DefaultNamespace, cfg.WriteEnabled, cfg.MaxScaleReplicas).Register(mcpServer)
 
 	mcpHandler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server {
 		return mcpServer
@@ -43,7 +43,12 @@ func main() {
 	mux.Handle("/mcp", mcpHandler)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok", "version": version})
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"status":             "ok",
+			"version":            version,
+			"write_enabled":      cfg.WriteEnabled,
+			"max_scale_replicas": cfg.MaxScaleReplicas,
+		})
 	})
 
 	server := &http.Server{
@@ -62,6 +67,8 @@ func main() {
 			"mcp_path", "/mcp",
 			"default_namespace", cfg.DefaultNamespace,
 			"version", version,
+			"write_enabled", cfg.WriteEnabled,
+			"max_scale_replicas", cfg.MaxScaleReplicas,
 		)
 		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			logger.Error("HTTP server failed", "error", err)

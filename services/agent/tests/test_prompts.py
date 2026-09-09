@@ -1,6 +1,6 @@
 import unittest
 
-from opspilot_agent.prompts import SYSTEM_INSTRUCTIONS, build_investigation_prompt
+from opspilot_agent.prompts import REMEDIATION_INSTRUCTIONS, SYSTEM_INSTRUCTIONS, build_investigation_prompt
 
 
 class PromptTests(unittest.TestCase):
@@ -19,6 +19,12 @@ class PromptTests(unittest.TestCase):
         self.assertIn("why is payment failing?", prompt)
         self.assertIn("knowledge base", prompt)
         self.assertIn("GitHub change intelligence is enabled", prompt)
+
+
+    def test_remediation_instructions_require_human_approval(self):
+        self.assertIn("Human-approved remediation is enabled", REMEDIATION_INSTRUCTIONS)
+        self.assertIn("external human approval", REMEDIATION_INSTRUCTIONS)
+        self.assertIn("Never assume approval was granted", REMEDIATION_INSTRUCTIONS)
 
 
 if __name__ == "__main__":

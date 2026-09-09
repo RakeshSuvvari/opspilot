@@ -45,3 +45,13 @@ For the local kind demo, the in-cluster deployment is preferred because it exerc
 The Kubernetes manifest grants the server only `get`, `list`, and `watch` access to pods/events/deployments plus `get` access to pod logs in `opspilot-demo`. It cannot create, patch, update, or delete workloads.
 
 Environment values with secret-like names are redacted before they are returned to an MCP client. Secret-backed env vars return only their source reference, never the secret value.
+
+## Phase 7 optional write tools
+
+The server remains read-only unless `OPSPILOT_K8S_WRITE_ENABLED=true` is set at process start. When
+enabled it also registers `k8s_restart_deployment`, `k8s_scale_deployment`, and
+`k8s_rollback_deployment`. Scale requests are capped by `OPSPILOT_K8S_MAX_SCALE_REPLICAS` (default 10).
+
+Enabling tool registration alone is not enough: the Kubernetes ServiceAccount must separately receive
+the `rbac-remediation.yaml` Role. This separation keeps the default Phase 2-6 deployment read-only.
+Client-side OpsPilot remediation additionally marks every write tool as requiring human approval.

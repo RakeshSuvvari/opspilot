@@ -80,3 +80,36 @@ Produce the structured OpsPilot incident analysis only after completing the inve
 runtime will independently derive tool usage, timeline, and confidence coverage metrics from the
 actual tool records.
 """.strip()
+
+
+REMEDIATION_INSTRUCTIONS = SYSTEM_INSTRUCTIONS.replace(
+    "11. This phase is read-only. Recommend remediation but never claim to have changed, restarted,\n    patched, deleted, scaled, rolled back, merged, or edited any resource/repository.",
+    "11. Human-approved remediation is enabled. You may call only the available Kubernetes remediation\n    tools after collecting enough live evidence to justify the exact action. Every mutating call is gated\n    by an external human approval and will pause before execution. Never assume approval was granted."
+) + """
+
+Remediation execution policy:
+- Investigate first. Do not call a mutating tool merely because the engineer asked to fix something.
+- Prefer k8s_rollback_deployment when a newly rolled out Deployment pod-template/config change is directly
+  supported as the incident cause and a previous ReplicaSet revision exists.
+- Use k8s_restart_deployment only for a transient/stuck condition where restarting unchanged configuration
+  is plausibly corrective. A restart must not be used to hide a known configuration defect.
+- Use k8s_scale_deployment only for capacity/availability needs supported by evidence. Never scale above the
+  server-enforced limit and do not scale to zero unless the engineer explicitly requested shutdown behavior.
+- Never use a write tool to modify Secrets, credentials, arbitrary environment variables, RBAC, namespaces,
+  or GitHub content; Phase 7 intentionally exposes no such generic mutation tool.
+- After an approved action executes, verify the result with read-only Kubernetes tools. Do not call the same
+  mutating action repeatedly if recovery is still progressing.
+- If the human rejects an action, respect the rejection and return the safest remaining recommendation.
+- The final report must distinguish recommended remediation from actions that actually executed. OpsPilot's
+  runtime will deterministically record the approval decisions and executed tool calls.
+""".strip()
+
+
+def build_remediation_prompt(query: str, namespace: str, github_enabled: bool = False) -> str:
+    return build_investigation_prompt(query, namespace, github_enabled) + """
+
+Human-approved remediation is enabled for this run. Diagnose the incident first. If one of the narrowly
+scoped remediation tools directly addresses the evidence-backed root cause, request that exact tool call.
+The runtime will pause for human approval before execution. After an approved action, verify recovery using
+live Kubernetes evidence before producing the final report.
+"""

@@ -11,10 +11,12 @@ import (
 type Server struct {
 	client           *k8s.Client
 	defaultNamespace string
+	writeEnabled     bool
+	maxScaleReplicas int32
 }
 
-func New(client *k8s.Client, defaultNamespace string) *Server {
-	return &Server{client: client, defaultNamespace: defaultNamespace}
+func New(client *k8s.Client, defaultNamespace string, writeEnabled bool, maxScaleReplicas int32) *Server {
+	return &Server{client: client, defaultNamespace: defaultNamespace, writeEnabled: writeEnabled, maxScaleReplicas: maxScaleReplicas}
 }
 
 func (s *Server) Register(server *mcp.Server) {
@@ -42,6 +44,21 @@ func (s *Server) Register(server *mcp.Server) {
 		Name:        "k8s_get_deployment",
 		Description: "Inspect a Kubernetes Deployment including replicas, container images, resources, non-secret environment configuration, readiness/liveness probes, and source provenance annotations such as repository/current/previous revision.",
 	}, s.getDeployment)
+
+	if s.writeEnabled {
+		mcp.AddTool(server, &mcp.Tool{
+			Name:        "k8s_restart_deployment",
+			Description: "Restart a Deployment by changing its pod-template restart annotation. This is a mutating remediation action and must only be used after explicit human approval.",
+		}, s.restartDeployment)
+		mcp.AddTool(server, &mcp.Tool{
+			Name:        "k8s_scale_deployment",
+			Description: "Change Deployment replica count within the server-enforced safety limit. This is a mutating remediation action and must only be used after explicit human approval.",
+		}, s.scaleDeployment)
+		mcp.AddTool(server, &mcp.Tool{
+			Name:        "k8s_rollback_deployment",
+			Description: "Roll back a Deployment pod template to a prior ReplicaSet revision. This is a mutating remediation action and must only be used after explicit human approval.",
+		}, s.rollbackDeployment)
+	}
 }
 
 type listPodsInput struct {
@@ -133,4 +150,51 @@ func (s *Server) namespace(namespace string) string {
 		return namespace
 	}
 	return s.defaultNamespace
+}
+
+type restartDeploymentInput struct {
+	Namespace      string `json:"namespace,omitempty" jsonschema:"Kubernetes namespace. Defaults to the server configured namespace."`
+	DeploymentName string `json:"deployment_name" jsonschema:"Exact Deployment name to restart."`
+}
+
+func (s *Server) restartDeployment(ctx context.Context, _ *mcp.CallToolRequest, input restartDeploymentInput) (*mcp.CallToolResult, k8s.RestartDeploymentResult, error) {
+	if input.DeploymentName == "" {
+		return nil, k8s.RestartDeploymentResult{}, fmt.Errorf("deployment_name is required")
+	}
+	returnValue, err := s.client.RestartDeployment(ctx, s.namespace(input.Namespace), input.DeploymentName)
+	return nil, returnValue, err
+}
+
+type scaleDeploymentInput struct {
+	Namespace      string `json:"namespace,omitempty" jsonschema:"Kubernetes namespace. Defaults to the server configured namespace."`
+	DeploymentName string `json:"deployment_name" jsonschema:"Exact Deployment name to scale."`
+	Replicas       int32  `json:"replicas" jsonschema:"Desired replica count. Must be non-negative and within the OpsPilot server safety limit."`
+}
+
+func (s *Server) scaleDeployment(ctx context.Context, _ *mcp.CallToolRequest, input scaleDeploymentInput) (*mcp.CallToolResult, k8s.ScaleDeploymentResult, error) {
+	if input.DeploymentName == "" {
+		return nil, k8s.ScaleDeploymentResult{}, fmt.Errorf("deployment_name is required")
+	}
+	if input.Replicas < 0 || input.Replicas > s.maxScaleReplicas {
+		return nil, k8s.ScaleDeploymentResult{}, fmt.Errorf("replicas must be between 0 and %d", s.maxScaleReplicas)
+	}
+	returnValue, err := s.client.ScaleDeployment(ctx, s.namespace(input.Namespace), input.DeploymentName, input.Replicas)
+	return nil, returnValue, err
+}
+
+type rollbackDeploymentInput struct {
+	Namespace      string `json:"namespace,omitempty" jsonschema:"Kubernetes namespace. Defaults to the server configured namespace."`
+	DeploymentName string `json:"deployment_name" jsonschema:"Exact Deployment name to roll back."`
+	Revision       int64  `json:"revision,omitempty" jsonschema:"Optional Kubernetes ReplicaSet revision. Omit or use 0 for the immediately previous revision."`
+}
+
+func (s *Server) rollbackDeployment(ctx context.Context, _ *mcp.CallToolRequest, input rollbackDeploymentInput) (*mcp.CallToolResult, k8s.RollbackDeploymentResult, error) {
+	if input.DeploymentName == "" {
+		return nil, k8s.RollbackDeploymentResult{}, fmt.Errorf("deployment_name is required")
+	}
+	if input.Revision < 0 {
+		return nil, k8s.RollbackDeploymentResult{}, fmt.Errorf("revision cannot be negative")
+	}
+	returnValue, err := s.client.RollbackDeployment(ctx, s.namespace(input.Namespace), input.DeploymentName, input.Revision)
+	return nil, returnValue, err
 }
