@@ -40,6 +40,8 @@ async def healthz(request: Request) -> dict[str, object]:
         "k8s_mcp_url": settings.k8s_mcp_url,
         "rag_enabled": settings.rag_enabled,
         "embedding_model": settings.embedding_model,
+        "phase": 5,
+        "save_run_artifacts": settings.save_run_artifacts,
     }
 
 

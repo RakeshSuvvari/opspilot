@@ -1,4 +1,5 @@
 [console_scripts]
 opspilot-agent = opspilot_agent.cli:main
 opspilot-db = opspilot_agent.rag.admin:main
+opspilot-eval = opspilot_agent.evals.cli:main
 opspilot-rag = opspilot_agent.rag.cli:main

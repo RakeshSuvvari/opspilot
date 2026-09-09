@@ -18,6 +18,9 @@ class SettingsTests(unittest.TestCase):
         self.assertEqual(settings.embedding_model, "text-embedding-3-small")
         self.assertEqual(settings.embedding_dimensions, 1536)
         self.assertEqual(settings.database_name, "opspilot")
+        self.assertTrue(settings.save_run_artifacts)
+        self.assertEqual(settings.run_artifact_dir, ".opspilot/runs")
+        self.assertEqual(settings.timeline_max_events, 20)
 
     def test_invalid_mcp_url(self):
         with patch.dict(

@@ -2,578 +2,233 @@
 
 **Agentic Kubernetes Incident Response Platform**
 
-OpsPilot is a production-style AI/backend project that investigates Kubernetes incidents by combining live cluster evidence with operational knowledge. Go is used for Kubernetes-facing/MCP/backend components; Python will be used for OpenAI agent orchestration, RAG, and evaluation.
+OpsPilot investigates Kubernetes incidents by combining live cluster diagnostics with operational knowledge. The project deliberately uses **Go** for Kubernetes/MCP infrastructure and **Python** for OpenAI agent orchestration, RAG, evaluation, and observability.
 
-## Current milestone: Phase 2
+## Current milestone: Phase 5
 
-Phase 1 created a real local Kubernetes demo with three Go services and four deterministic incidents. Phase 2 adds a **read-only Kubernetes diagnostic service in Go** and exposes those diagnostics through the official Model Context Protocol Go SDK over Streamable HTTP.
-
-```text
-Engineer / future OpenAI agent
-             |
-             | MCP Streamable HTTP
-             v
-   k8s-mcp-server (Go)
-             |
-             | client-go
-             v
-      Kubernetes API
-             |
-       opspilot-demo
-```
-
-### Phase 2 MCP tools
-
-| Tool | Purpose |
-|---|---|
-| `k8s_list_pods` | Find unhealthy pods, readiness state, restarts, and container state |
-| `k8s_get_pod` | Inspect resources, probes, conditions, and termination evidence |
-| `k8s_get_pod_logs` | Read bounded recent/current or previous container logs |
-| `k8s_get_events` | Inspect recent namespace/object events |
-| `k8s_get_deployment` | Inspect rollout state, images, resources, env metadata, and probes |
-
-The tool output is intentionally normalized instead of returning full Kubernetes API objects. This keeps future LLM context smaller and surfaces evidence that matters for incident diagnosis.
-
-## Security model
-
-The MCP server runs as `system:serviceaccount:opspilot-system:k8s-mcp-server` and receives a namespace-scoped `Role` in `opspilot-demo`.
-
-Allowed:
-
-- `get`, `list`, `watch`: pods, events, deployments
-- `get`: pod logs
-
-Not allowed:
-
-- create
-- patch
-- update
-- delete
-
-Secret-like environment values are redacted before tool responses are returned. Environment variables backed by Kubernetes Secrets expose the reference metadata, not the secret value.
-
-## Prerequisites
-
-- Docker Desktop
-- kubectl
-- kind
-- Go **1.25+** for local Phase 2 tests/smoke client
-
-The MCP Go SDK v1.7.0 targets the current 2026-07-28 MCP protocol and requires Go 1.25.
-
-On macOS with Homebrew:
-
-```bash
-brew install kind kubectl go
-```
-
-## Start Phase 1 healthy baseline
-
-```bash
-make verify
-make cluster-up
-make build-images
-make load-images
-make deploy-base
-make status
-```
-
-Test checkout:
-
-```bash
-kubectl port-forward -n opspilot-demo service/checkout 8080:8080
-curl http://localhost:8080/checkout
-```
-
-## Start Phase 2 MCP server
-
-With the healthy demo already running:
-
-```bash
-make phase2-up
-make status-k8s-mcp
-```
-
-The RBAC check should report:
-
-```text
-yes
-delete deployments: no
-```
-
-Expose the MCP server in one terminal:
-
-```bash
-make port-forward-k8s-mcp
-```
-
-Process health check:
-
-```bash
-curl http://localhost:8080/healthz
-```
-
-Expected:
-
-```json
-{"status":"ok","version":"0.2.0"}
-```
-
-In another terminal, use the included Go MCP client to verify protocol discovery and execute the first tool:
-
-```bash
-make smoke-k8s-mcp
-```
-
-It lists the five MCP tools and calls `k8s_list_pods` against `opspilot-demo`.
-
-### Unit tests
-
-```bash
-cd services/k8s-mcp-server
-go mod tidy
-go test ./...
-```
-
-The initial tests verify that failure evidence such as `OOMKilled`, exit code 137, and memory limits are preserved and that secret-like environment configuration is redacted.
-
-## Reproducible incidents
-
-Each incident recreates `opspilot-demo`. The Makefile automatically restores the MCP server's namespace-scoped Role/RoleBinding afterward when Phase 2 is deployed.
-
-### INC-001 — Missing `DATABASE_URL`
-
-```bash
-make incident-1
-make status
-make logs-payment
-```
-
-Expected evidence:
-
-- payment pod enters `CrashLoopBackOff`
-- application log contains `DATABASE_URL environment variable not configured`
-- current Deployment lacks `DATABASE_URL`
-
-### INC-002 — `OOMKilled`
-
-```bash
-make incident-2
-make status
-```
-
-Expected evidence:
-
-- checkout has a 64Mi memory limit
-- process deliberately allocates beyond the limit
-- previous termination reason is `OOMKilled`, exit code 137
-
-### INC-003 — Broken readiness probe
-
-```bash
-make incident-3
-make status
-```
-
-Expected evidence:
-
-- inventory process is running
-- pod remains `Ready=False`
-- readiness probe targets port `8081`
-- application listens on port `8080`
-
-### INC-004 — Downstream timeout
-
-```bash
-make incident-4
-kubectl port-forward -n opspilot-demo service/checkout 8081:8080
-curl -i http://localhost:8081/checkout
-```
-
-Expected evidence:
-
-- inventory response delay is 180ms
-- checkout timeout is 50ms
-- checkout logs report `context deadline exceeded`
-- client receives HTTP 503
-
-## Phase 2 validation against incidents
-
-Once the MCP server is port-forwarded, the smoke client confirms connectivity. Phase 3 will replace the smoke client with the Python OpenAI agent and allow the model to decide which MCP tools to call.
-
-The intended first automated investigation is INC-001:
-
-```text
-k8s_list_pods
-      |
-      v
-payment pod = CrashLoopBackOff
-      |
-      v
-k8s_get_pod
-      |
-      v
-restart/failure state
-      |
-      v
-k8s_get_pod_logs
-      |
-      v
-DATABASE_URL not configured
-      |
-      v
-k8s_get_deployment
-      |
-      v
-DATABASE_URL absent
-      |
-      v
-Evidence-backed root cause
-```
-
-## Repository architecture
-
-```text
-services/
-  k8s-mcp-server/             Go - implemented in Phase 2
-  incident-api/               Go - later phase
-  agent/                      Python/OpenAI - Phase 3
-  github-mcp-server/          Go - later phase
-
-infra/kubernetes/opspilot/
-  k8s-mcp-server/             ServiceAccount, RBAC, Deployment, Service
-
-demo/
-  services/                   Go demo workloads
-  incidents/                  deterministic incident overlays
-
-knowledge/                    future RAG corpus
-evals/                        incident evaluation cases
-```
-
-## Next milestone: Phase 3
-
-Phase 3 adds the Python/OpenAI incident agent and connects it to this MCP endpoint. The first success criterion is that the agent independently investigates INC-001 and returns:
-
-- probable root cause
-- supporting evidence
-- recommended remediation
-- confidence level
-
-No write/remediation Kubernetes tools will be introduced yet.
-
-# Phase 3 — OpenAI Incident Agent
-
-Phase 3 connects a Python OpenAI agent to the read-only Go Kubernetes MCP server from Phase 2.
-The model controls the diagnostic loop, while the Go service remains the only component with
-Kubernetes API access.
-
-```text
-Engineer / CLI / HTTP
-        |
-        v
-Python OpsPilot Agent
-OpenAI Agents SDK + Responses API
-        |
-        | MCP Streamable HTTP
-        v
-Go Kubernetes MCP Server
-        |
-        v
-Kubernetes API
-```
-
-The agent currently expects these MCP tools:
-
-- `k8s_list_pods`
-- `k8s_get_pod`
-- `k8s_get_pod_logs`
-- `k8s_get_events`
-- `k8s_get_deployment`
-
-Its final response is a structured `IncidentReport` containing status, affected resources,
-root cause, confidence, evidence, timeline, recommended remediation, follow-up checks, and tools
-used. No Kubernetes write/remediation tools exist in this phase.
-
-## Phase 3 setup
-
-The repository workspace now targets Go 1.27.1. Phase 3 requires Python 3.11+.
-
-Create the Python environment:
-
-```bash
-make agent-setup
-make agent-test
-```
-
-Create local environment configuration:
-
-```bash
-cp .env.example .env
-```
-
-Set your platform API key in `.env`:
-
-```bash
-OPENAI_API_KEY=sk-...
-OPENAI_MODEL=gpt-5.6-terra
-```
-
-`gpt-5.6-terra` is the default Phase 3 model because it balances capability and API cost. The
-model can be changed entirely through `OPENAI_MODEL` without code changes.
-
-## Run Python -> Go MCP connectivity check
-
-The Phase 2 MCP service must already be deployed. In terminal 1:
-
-```bash
-make port-forward-k8s-mcp
-```
-
-In terminal 2:
-
-```bash
-make agent-tools
-```
-
-Expected tool list:
-
-```text
-k8s_get_deployment
-k8s_get_events
-k8s_get_pod
-k8s_get_pod_logs
-k8s_list_pods
-```
-
-This command does not call OpenAI; it only validates the Python MCP client path to the Go server.
-
-## First end-to-end AI investigation — INC-001
-
-Inject the deterministic payment failure:
-
-```bash
-make incident-1
-```
-
-Keep the MCP port-forward running, then execute:
-
-```bash
-make investigate-1
-```
-
-The agent should autonomously collect evidence similar to:
-
-```text
-k8s_list_pods
-      |
-      v
-payment pod restarting / CrashLoopBackOff
-      |
-      +--> k8s_get_pod
-      +--> k8s_get_events
-      +--> k8s_get_pod_logs
-      +--> k8s_get_deployment
-      |
-      v
-DATABASE_URL required by the application but absent from Deployment
-      |
-      v
-Structured evidence-backed RCA
-```
-
-The exact tool order is intentionally not hard-coded; deciding what evidence to collect is part of
-the agent behavior.
-
-Run any custom investigation with:
-
-```bash
-make investigate QUERY="Why is inventory not becoming Ready?"
-```
-
-## Phase 3 developer API
-
-The Python service also exposes the same runtime through FastAPI for the later Go Incident API.
-With the MCP port-forward active:
-
-```bash
-make agent-api
-```
-
-Health/tool endpoints:
-
-```bash
-curl http://localhost:8001/healthz
-curl http://localhost:8001/v1/tools
-```
-
-Investigation endpoint:
-
-```bash
-curl -s http://localhost:8001/v1/investigations \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "namespace": "opspilot-demo",
-    "query": "Why is the payment service failing and repeatedly restarting?"
-  }'
-```
-
-## Tracing and data handling
-
-OpenAI Agents SDK tracing is left enabled by default so agent/model/tool execution can be inspected
-while developing OpsPilot. `OPSPILOT_AGENT_TRACE_SENSITIVE_DATA=false` is the project default so
-potentially sensitive generation/tool payloads are not included in traces. The Phase 2 Go MCP
-server also redacts likely secret environment variable values before they reach the agent.
-
-## Phase 3 success criterion
-
-Phase 3 is complete when, for INC-001, the agent independently calls the Kubernetes MCP tools and
-returns a high-confidence root cause that the payment workload is restarting because the required
-`DATABASE_URL` configuration was removed, supported by pod/log/deployment evidence.
-
-# Phase 4 — PostgreSQL + pgvector RAG
-
-Phase 4 adds organizational knowledge retrieval to the live Kubernetes investigation flow.
-The agent still treats Kubernetes MCP evidence as the source of truth for the current incident,
-but it can now search runbooks, architecture documentation, historical incidents, and
-postmortems for analogous failures and safer remediation guidance.
+The end-to-end system now includes:
 
 ```text
 Engineer
    |
    v
-Python/OpenAI Incident Agent
+OpenAI Incident Agent (Python)
    |                         \
-   | MCP                      \ search_knowledge
+   | MCP                      \ local RAG tool
    v                           v
-Go Kubernetes MCP        PostgreSQL / pgvector
+Kubernetes MCP Server (Go)   PostgreSQL + pgvector
    |                           |
    v                           v
-Live Kubernetes          Runbooks / incidents /
-evidence                 postmortems / architecture
-          \               /
-           \             /
-            v           v
-           Evidence-backed RCA
+Kubernetes API               Runbooks / incidents / postmortems
+   \                           /
+    \                         /
+     +---- evidence-backed RCA ----+
+                    |
+                    v
+       Phase 5 deterministic trust layer
+       - actual tools used
+       - incident timeline
+       - evidence/confidence score
+       - token/latency metrics
+       - evaluation score
+       - local run artifacts
 ```
 
-## Database
+### Phase 5 trust model
 
-The local database is named `opspilot`, with a dedicated `knowledge` schema:
+The LLM still performs the semantic root-cause analysis, but it no longer self-reports its tool usage or constructs the authoritative timeline.
 
-```text
-knowledge.documents
-knowledge.chunks
-```
+After `Runner.run(...)` completes, OpsPilot reads the actual SDK run items and:
 
-Chunks use `vector(1536)` embeddings with an HNSW cosine-distance index. The schema also creates
-a PostgreSQL full-text `tsvector`/GIN index so hybrid search can be added without a database
-migration in a later phase.
+1. extracts real MCP/function tool calls,
+2. derives `tools_used`,
+3. builds a timestamp-sorted timeline from Kubernetes tool outputs,
+4. calculates deterministic evidence/confidence coverage,
+5. records model request/token/tool-call/latency metrics,
+6. saves a local investigation artifact,
+7. optionally scores the run against a known incident evaluation case.
 
-### Configure `.env`
+This separates **model judgment** from **system-observed facts**.
 
-Copy `.env.example` if needed and use the same local PostgreSQL credentials you use in PgAdmin:
+## Main stack
 
-```text
-OPSPILOT_DATABASE_URL=postgresql://postgres:YOUR_PASSWORD@localhost:5432/opspilot
-OPSPILOT_POSTGRES_ADMIN_URL=postgresql://postgres:YOUR_PASSWORD@localhost:5432/postgres
-OPSPILOT_RAG_ENABLED=true
-OPSPILOT_EMBEDDING_MODEL=text-embedding-3-small
-OPSPILOT_EMBEDDING_DIMENSIONS=1536
-```
+- Go 1.27.1
+- Kubernetes + kind
+- Docker
+- Model Context Protocol (MCP)
+- Python 3.11+
+- OpenAI Agents SDK / Responses API
+- PostgreSQL + pgvector
+- OpenAI embeddings
+- FastAPI
 
-### Create and initialize the database
+## Phase 5 configuration
 
-Using OpsPilot commands:
+Add these to `.env` (the defaults are also in `.env.example`):
 
 ```bash
-make agent-setup
-make db-create
-make db-init
-make db-check
+OPSPILOT_SAVE_RUN_ARTIFACTS=true
+OPSPILOT_RUN_ARTIFACT_DIR=.opspilot/runs
+OPSPILOT_EVAL_ARTIFACT_DIR=.opspilot/evals
+OPSPILOT_TIMELINE_MAX_EVENTS=20
 ```
 
-Or use PgAdmin directly:
+Raw Kubernetes tool outputs are **not** persisted in the local run artifact. The artifact stores the final report plus tool names/arguments; secret-like environment values are already redacted by the Go MCP server.
 
-1. Run `infra/postgres/00-create-database.sql` while connected to `postgres`.
-2. Switch to the newly created `opspilot` database.
-3. Run `infra/postgres/01-schema.sql`.
+## Run an investigation
 
-`CREATE EXTENSION vector` requires the pgvector extension to be installed in the PostgreSQL
-server, not merely PgAdmin.
-
-### Index the knowledge base
+Keep the MCP port-forward open:
 
 ```bash
-make rag-ingest
-make rag-stats
+make port-forward-k8s-mcp
 ```
 
-The ingestion pipeline:
-
-```text
-knowledge/**/*.md
-      |
-      v
-heading-aware chunking
-      |
-      v
-OpenAI text-embedding-3-small
-      |
-      v
-PostgreSQL knowledge.documents + knowledge.chunks
-      |
-      v
-pgvector HNSW cosine index
-```
-
-Ingestion uses SHA-256 content hashes. Re-running `make rag-ingest` skips unchanged documents, so
-we do not pay to regenerate embeddings unnecessarily.
-
-### Test retrieval without the agent
-
-```bash
-make rag-search RAG_QUERY="payment crashloop missing database configuration"
-```
-
-A successful result should rank the payment database runbook and/or the historical payment
-postmortem near the top.
-
-### Agent + RAG
-
-With Phase 2's MCP port-forward running, inject an incident and investigate normally:
+Inject INC-001 in another terminal:
 
 ```bash
 make incident-1
+```
+
+Then investigate:
+
+```bash
 make investigate-1
 ```
 
-The agent can now decide to call:
+The Phase 5 CLI now adds sections similar to:
 
 ```text
-k8s_list_pods
-k8s_get_pod
-k8s_get_events
-k8s_get_pod_logs
-k8s_get_deployment
-search_knowledge
+Confidence:    high (100/100)
+Evidence:      100/100
+
+Deterministic timeline
+- ...
+
+Evidence assessment
+- Live sources: 5
+- Corroborated: yes
+- RAG used: yes
+
+Run metrics
+- Elapsed: ... ms
+- Model requests: ...
+- Tokens: ...
+- Tool calls: ...
 ```
 
-For INC-001, live Kubernetes evidence should still establish that `DATABASE_URL` is missing. The
-knowledge search can then retrieve the payment configuration runbook and similar historical
-postmortem to strengthen remediation guidance. Historical documents must never be treated as
-proof of the current cluster state.
+The corresponding JSON artifact is written to:
 
-### Phase 4 checks
+```text
+.opspilot/runs/inv-xxxxxxxxxxxx.json
+```
+
+## Evaluation framework
+
+The four deterministic incident definitions live in:
+
+```text
+evals/cases/incidents.jsonl
+```
+
+Evaluate the currently injected incident:
 
 ```bash
-make phase4-check
+make eval-case EVAL_CASE=INC-001
 ```
 
-Phase 4 is complete when:
+Convenience targets:
 
-1. `make db-check` reports the `opspilot` database and an installed pgvector version.
-2. `make rag-ingest` indexes the Markdown knowledge base.
-3. `make rag-search` returns semantically relevant runbooks/incidents.
-4. `make investigate-1` includes `search_knowledge` when useful while grounding the root cause in
-   live Kubernetes evidence.
+```bash
+make eval-1
+make eval-2
+make eval-3
+make eval-4
+```
+
+These targets run the evaluation only; inject the matching incident first. For example:
+
+```bash
+make incident-2
+make eval-2
+```
+
+A successful evaluation prints a 0-100 breakdown and writes the full result under:
+
+```text
+.opspilot/evals/
+```
+
+For INC-004, inject it and generate one failing request before evaluating so checkout has live timeout log evidence:
+
+```bash
+make incident-4
+kubectl port-forward -n opspilot-demo service/checkout 8081:8080
+curl -i http://localhost:8081/checkout
+make eval-4
+```
+
+## Evaluation dimensions
+
+The deterministic score currently uses:
+
+| Dimension | Weight |
+|---|---:|
+| Incident status | 15 |
+| Root-cause signal coverage | 40 |
+| Required tool coverage | 20 |
+| Affected resource | 10 |
+| Confidence | 5 |
+| RAG expectation | 5 |
+| Timeline | 5 |
+| **Total** | **100** |
+
+The root-cause text is evaluated using incident-specific signal groups rather than exact string equality, so wording can vary while the underlying diagnosis remains measurable.
+
+## Evidence/confidence scoring
+
+Phase 5 separately calculates evidence coverage from the actual tools called:
+
+| Tool | Evidence weight |
+|---|---:|
+| `k8s_list_pods` | 20 |
+| `k8s_get_pod` | 20 |
+| `k8s_get_pod_logs` | 20 |
+| `k8s_get_events` | 15 |
+| `k8s_get_deployment` | 20 |
+| `search_knowledge` | 5 |
+
+An additional corroboration bonus is applied when multiple independent live Kubernetes sources are used, capped at 100. Incident/degraded reports cannot receive high deterministic confidence if fewer than two live sources were collected.
+
+The model's own confidence is retained as `assessment.model_confidence` for comparison, while the report's top-level `confidence` is the deterministic Phase 5 confidence.
+
+## OpenAI tracing
+
+OpenAI Agents SDK tracing remains enabled unless:
+
+```bash
+OPSPILOT_AGENT_DISABLE_TRACING=true
+```
+
+Every investigation adds `investigation_id`, namespace, model, RAG state, component, and phase metadata to the trace. Sensitive trace data remains disabled by default:
+
+```bash
+OPSPILOT_AGENT_TRACE_SENSITIVE_DATA=false
+```
+
+The same `investigation_id` appears in the CLI output and local run artifact, making it easier to correlate a local investigation with the OpenAI trace.
+
+## Phase 5 checks
+
+```bash
+make phase5-check
+```
+
+This runs the Python unit suite and source validation. Phase 5 adds tests for deterministic timeline generation, evidence/confidence scoring, evaluation scoring, and observability helpers.
+
+## Security model
+
+The Kubernetes MCP service remains read-only. It can inspect pods, logs, events, and deployments but cannot create, patch, update, or delete workloads. Phase 5 does not add remediation actions.
+
+## Next milestone
+
+A later phase can add the Go Incident API, GitHub/deployment-change correlation, richer benchmark reporting, and eventually human-approved remediation tools.

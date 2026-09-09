@@ -11,3 +11,6 @@ coverage.out
 *.log
 services/agent/.venv/
 .pytest_cache/
+
+# Local OpsPilot run/evaluation artifacts
+.opspilot/

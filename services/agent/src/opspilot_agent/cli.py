@@ -19,11 +19,13 @@ DEFAULT_QUERY = (
 def _print_report(report: IncidentReport) -> None:
     print("OpsPilot Investigation")
     print("=" * 72)
-    print(f"Namespace:   {report.namespace}")
-    print(f"Status:      {report.status.value}")
-    print(f"Confidence:  {report.confidence.value}")
+    print(f"Investigation: {report.metrics.investigation_id}")
+    print(f"Namespace:     {report.namespace}")
+    print(f"Status:        {report.status.value}")
+    print(f"Confidence:    {report.confidence.value} ({report.assessment.confidence_score}/100)")
+    print(f"Evidence:      {report.assessment.evidence_score}/100")
     if report.affected_resources:
-        print(f"Affected:    {', '.join(report.affected_resources)}")
+        print(f"Affected:      {', '.join(report.affected_resources)}")
     print()
     print("Summary")
     print(report.summary)
@@ -39,7 +41,7 @@ def _print_report(report: IncidentReport) -> None:
         print(f"   Supports: {item.supports}")
 
     if report.timeline:
-        print("\nTimeline")
+        print("\nDeterministic timeline")
         for item in report.timeline:
             print(f"- {item.timestamp}: {item.event}")
 
@@ -52,8 +54,24 @@ def _print_report(report: IncidentReport) -> None:
         for step in report.follow_up_checks:
             print(f"- {step}")
 
+    print("\nEvidence assessment")
+    print(f"- Live sources: {report.assessment.live_source_count}")
+    print(f"- Corroborated: {'yes' if report.assessment.corroborated else 'no'}")
+    print(f"- RAG used: {'yes' if report.assessment.knowledge_used else 'no'}")
+    print(f"- Model confidence: {report.assessment.model_confidence.value}")
+    for reason in report.assessment.reasons:
+        print(f"- {reason}")
+
     print("\nTools used")
     print(", ".join(report.tools_used) if report.tools_used else "none")
+
+    print("\nRun metrics")
+    print(f"- Elapsed: {report.metrics.elapsed_ms} ms")
+    print(f"- Model requests: {report.metrics.model_requests}")
+    print(f"- Tokens: {report.metrics.total_tokens} total "
+          f"({report.metrics.input_tokens} input / {report.metrics.output_tokens} output)")
+    print(f"- Tool calls: {report.metrics.tool_call_count} "
+          f"({report.metrics.unique_tool_count} unique)")
 
 
 async def _run_tools(settings: Settings) -> int:

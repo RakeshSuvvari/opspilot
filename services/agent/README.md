@@ -1,15 +1,19 @@
-# OpsPilot Agent Service (Phases 3–4)
+# OpsPilot Agent Service (Phases 3–5)
 
 The Python service orchestrates the OpenAI incident agent, the read-only Go Kubernetes MCP server,
-and the PostgreSQL/pgvector knowledge base.
+the PostgreSQL/pgvector knowledge base, and the Phase 5 trust/evaluation layer.
 
 ## Responsibilities
 
 - Connect to the Go Kubernetes MCP server with Streamable HTTP.
 - Let the OpenAI agent autonomously select Kubernetes diagnostic tools.
 - Expose `search_knowledge` for RAG over runbooks, incidents, postmortems, and architecture docs.
-- Return the typed `IncidentReport` schema through the CLI and FastAPI API.
-- Keep current-cluster diagnosis read-only and evidence-backed.
+- Return a typed incident analysis from the LLM.
+- Derive actual `tools_used` from SDK run items instead of model self-reporting.
+- Build deterministic timelines from timestamped Kubernetes tool outputs.
+- Calculate evidence/confidence coverage separately from the model's confidence.
+- Record request/token/tool-call/latency metrics and local run artifacts.
+- Score known incident runs with deterministic evaluation cases.
 
 ## Setup
 
@@ -20,7 +24,7 @@ make agent-setup
 make agent-test
 ```
 
-Phase 4 database setup:
+Database/RAG setup:
 
 ```bash
 make db-create
@@ -33,7 +37,9 @@ With the Go MCP server port-forward running:
 
 ```bash
 make agent-tools
+make incident-1
 make investigate-1
+make eval-1
 ```
 
-`agent-tools` now lists the five Kubernetes MCP tools plus `search_knowledge` when RAG is enabled.
+Run artifacts are stored in `.opspilot/runs/`; evaluation artifacts are stored in `.opspilot/evals/` by default.

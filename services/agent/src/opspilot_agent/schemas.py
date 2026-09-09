@@ -34,10 +34,46 @@ class EvidenceItem(BaseModel):
 
 
 class TimelineEvent(BaseModel):
-    timestamp: str = Field(
-        description="Timestamp from Kubernetes evidence, or 'unknown' if no timestamp exists."
-    )
-    event: str = Field(description="Concise incident event supported by collected evidence.")
+    timestamp: str = Field(description="Timestamp derived from live Kubernetes tool output.")
+    event: str = Field(description="Deterministic incident event derived from tool output.")
+
+
+class AgentIncidentReport(BaseModel):
+    """Structured model output before OpsPilot's deterministic trust layer is applied."""
+
+    namespace: str
+    status: IncidentStatus
+    affected_resources: list[str]
+    summary: str
+    root_cause: str
+    confidence: Confidence
+    evidence: list[EvidenceItem]
+    remediation: list[str]
+    follow_up_checks: list[str]
+
+
+class EvidenceAssessment(BaseModel):
+    evidence_score: int = Field(ge=0, le=100)
+    confidence_score: int = Field(ge=0, le=100)
+    confidence: Confidence
+    model_confidence: Confidence
+    live_source_count: int = Field(ge=0)
+    knowledge_used: bool
+    corroborated: bool
+    reasons: list[str]
+
+
+class RunMetrics(BaseModel):
+    investigation_id: str
+    started_at: str
+    completed_at: str
+    elapsed_ms: int = Field(ge=0)
+    model_requests: int = Field(ge=0)
+    input_tokens: int = Field(ge=0)
+    output_tokens: int = Field(ge=0)
+    total_tokens: int = Field(ge=0)
+    tool_call_count: int = Field(ge=0)
+    unique_tool_count: int = Field(ge=0)
 
 
 class IncidentReport(BaseModel):
@@ -52,6 +88,8 @@ class IncidentReport(BaseModel):
     remediation: list[str]
     follow_up_checks: list[str]
     tools_used: list[str]
+    assessment: EvidenceAssessment
+    metrics: RunMetrics
 
 
 class InvestigationRequest(BaseModel):

@@ -1,12 +1,19 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+from time import perf_counter
+from uuid import uuid4
+
 from agents import Agent, RunConfig, Runner, set_tracing_disabled
 from agents.mcp import MCPServerStreamableHttp
 
+from .assessment import assess_evidence
 from .config import Settings
+from .observability import extract_tool_records, ordered_unique_tool_names, save_run_artifact
 from .prompts import SYSTEM_INSTRUCTIONS, build_investigation_prompt
 from .rag.tool import build_search_knowledge_tool
-from .schemas import IncidentReport
+from .schemas import AgentIncidentReport, IncidentReport, RunMetrics
+from .timeline import build_timeline
 
 EXPECTED_MCP_TOOLS = {
     "k8s_list_pods",
@@ -42,7 +49,7 @@ class IncidentAgentRuntime:
             model=settings.openai_model,
             mcp_servers=[self._mcp],
             tools=local_tools,
-            output_type=IncidentReport,
+            output_type=AgentIncidentReport,
         )
 
     async def start(self) -> None:
@@ -89,6 +96,10 @@ class IncidentAgentRuntime:
         if not target_namespace:
             raise ValueError("namespace cannot be empty")
 
+        investigation_id = f"inv-{uuid4().hex[:12]}"
+        started_at = datetime.now(timezone.utc)
+        started = perf_counter()
+
         result = await Runner.run(
             self._agent,
             build_investigation_prompt(query, target_namespace),
@@ -97,18 +108,70 @@ class IncidentAgentRuntime:
                 workflow_name="OpsPilot Incident Investigation",
                 trace_include_sensitive_data=self.settings.trace_sensitive_data,
                 trace_metadata={
+                    "investigation_id": investigation_id,
                     "namespace": target_namespace,
                     "model": self.settings.openai_model,
                     "rag_enabled": str(self.settings.rag_enabled).lower(),
                     "component": "opspilot-agent",
+                    "phase": "5",
                 },
             ),
         )
 
+        completed_at = datetime.now(timezone.utc)
+        elapsed_ms = int((perf_counter() - started) * 1000)
+
         output = result.final_output
-        if isinstance(output, IncidentReport):
-            return output
-        return IncidentReport.model_validate(output)
+        if isinstance(output, AgentIncidentReport):
+            agent_report = output
+        else:
+            agent_report = AgentIncidentReport.model_validate(output)
+
+        tool_records = extract_tool_records(result.new_items)
+        actual_tools = ordered_unique_tool_names(tool_records)
+        timeline = build_timeline(tool_records, max_events=self.settings.timeline_max_events)
+        assessment = assess_evidence(agent_report, actual_tools)
+
+        usage = result.context_wrapper.usage
+        metrics = RunMetrics(
+            investigation_id=investigation_id,
+            started_at=started_at.isoformat().replace("+00:00", "Z"),
+            completed_at=completed_at.isoformat().replace("+00:00", "Z"),
+            elapsed_ms=elapsed_ms,
+            model_requests=usage.requests,
+            input_tokens=usage.input_tokens,
+            output_tokens=usage.output_tokens,
+            total_tokens=usage.total_tokens,
+            tool_call_count=len(tool_records),
+            unique_tool_count=len(actual_tools),
+        )
+
+        report = IncidentReport(
+            namespace=agent_report.namespace,
+            status=agent_report.status,
+            affected_resources=agent_report.affected_resources,
+            summary=agent_report.summary,
+            root_cause=agent_report.root_cause,
+            confidence=assessment.confidence,
+            evidence=agent_report.evidence,
+            timeline=timeline,
+            remediation=agent_report.remediation,
+            follow_up_checks=agent_report.follow_up_checks,
+            tools_used=actual_tools,
+            assessment=assessment,
+            metrics=metrics,
+        )
+
+        if self.settings.save_run_artifacts:
+            save_run_artifact(
+                self.settings.run_artifact_dir,
+                report,
+                query=query,
+                model=self.settings.openai_model,
+                tool_records=tool_records,
+            )
+
+        return report
 
     async def __aenter__(self) -> "IncidentAgentRuntime":
         await self.start()

@@ -10,11 +10,14 @@ AGENT_PYTHON ?= $(AGENT_VENV)/bin/python
 AGENT_STAMP ?= $(AGENT_VENV)/.opspilot-installed
 QUERY ?= Investigate the current Kubernetes incident. Identify the most likely root cause, support it with live evidence, and recommend a safe remediation.
 RAG_QUERY ?= crashloop missing database configuration
+EVAL_CASE ?= INC-001
+EVAL_CASES ?= evals/cases/incidents.jsonl
 
 .PHONY: help verify cluster-up cluster-down build-images load-images deploy-base reset-demo status logs-checkout logs-payment logs-inventory incident-1 incident-2 incident-3 incident-4 \
 	build-k8s-mcp-image load-k8s-mcp-image deploy-k8s-mcp restart-k8s-mcp restore-k8s-mcp-rbac status-k8s-mcp logs-k8s-mcp port-forward-k8s-mcp test-k8s-mcp smoke-k8s-mcp phase2-up \
 	agent-setup agent-test agent-tools investigate investigate-1 agent-api build-agent-image phase3-check \
-	db-create db-init db-check rag-ingest rag-search rag-stats phase4-check
+	db-create db-init db-check rag-ingest rag-search rag-stats phase4-check \
+	eval-case eval-1 eval-2 eval-3 eval-4 phase5-check
 
 help:
 	@echo "OpsPilot"
@@ -57,6 +60,14 @@ help:
 	@echo "  make rag-search          - semantic search; override RAG_QUERY='...'"
 	@echo "  make rag-stats           - summarize indexed documents and chunks"
 	@echo "  make phase4-check        - source checks + agent/RAG unit tests"
+	@echo ""
+	@echo "Phase 5 - trust, observability, and evaluation"
+	@echo "  make eval-case EVAL_CASE=INC-001 - evaluate the currently injected incident"
+	@echo "  make eval-1              - evaluate INC-001 (inject it first with make incident-1)"
+	@echo "  make eval-2              - evaluate INC-002 (inject it first with make incident-2)"
+	@echo "  make eval-3              - evaluate INC-003 (inject it first with make incident-3)"
+	@echo "  make eval-4              - evaluate INC-004 after triggering /checkout once"
+	@echo "  make phase5-check        - source checks + Phase 5 unit tests"
 	@echo ""
 	@echo "  make cluster-down        - delete local cluster"
 
@@ -244,3 +255,24 @@ rag-stats: agent-setup
 phase4-check: agent-test
 	./scripts/verify-source.sh
 	@echo "Phase 4 source checks passed. Next: make db-check && make rag-search"
+
+# Phase 5 - deterministic trust, observability, and evaluation
+eval-case: agent-setup
+	@if [ -f .env ]; then set -a; source .env; set +a; fi; \
+		$(AGENT_PYTHON) -m opspilot_agent.evals.cli --cases $(EVAL_CASES) --case $(EVAL_CASE) --namespace $(NAMESPACE)
+
+eval-1: agent-setup
+	@$(MAKE) --no-print-directory eval-case EVAL_CASE=INC-001
+
+eval-2: agent-setup
+	@$(MAKE) --no-print-directory eval-case EVAL_CASE=INC-002
+
+eval-3: agent-setup
+	@$(MAKE) --no-print-directory eval-case EVAL_CASE=INC-003
+
+eval-4: agent-setup
+	@$(MAKE) --no-print-directory eval-case EVAL_CASE=INC-004
+
+phase5-check: agent-test
+	./scripts/verify-source.sh
+	@echo "Phase 5 source checks passed. Next: inject an incident and run make eval-case EVAL_CASE=INC-00X"

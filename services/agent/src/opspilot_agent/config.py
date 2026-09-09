@@ -54,6 +54,9 @@ class Settings:
     rag_min_similarity: float
     rag_chunk_chars: int
     rag_chunk_overlap_chars: int
+    save_run_artifacts: bool
+    run_artifact_dir: str
+    timeline_max_events: int
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -98,6 +101,11 @@ class Settings:
             rag_chunk_overlap_chars=_env_int(
                 "OPSPILOT_RAG_CHUNK_OVERLAP_CHARS", 200, minimum=0
             ),
+            save_run_artifacts=_env_bool("OPSPILOT_SAVE_RUN_ARTIFACTS", True),
+            run_artifact_dir=os.getenv(
+                "OPSPILOT_RUN_ARTIFACT_DIR", ".opspilot/runs"
+            ).strip(),
+            timeline_max_events=_env_int("OPSPILOT_TIMELINE_MAX_EVENTS", 20),
         )
         settings.validate()
         return settings
@@ -142,6 +150,10 @@ class Settings:
             raise ValueError(
                 "OPSPILOT_RAG_CHUNK_OVERLAP_CHARS must be smaller than OPSPILOT_RAG_CHUNK_CHARS"
             )
+        if not self.run_artifact_dir:
+            raise ValueError("OPSPILOT_RUN_ARTIFACT_DIR cannot be empty")
+        if self.timeline_max_events > 100:
+            raise ValueError("OPSPILOT_TIMELINE_MAX_EVENTS must be <= 100")
 
     def require_openai_key(self) -> None:
         if not self.openai_api_key:
