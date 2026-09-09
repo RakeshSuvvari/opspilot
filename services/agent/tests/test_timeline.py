@@ -42,6 +42,34 @@ class TimelineTests(unittest.TestCase):
         self.assertEqual(timeline[-1].timestamp, "2026-09-08T10:00:05Z")
         self.assertEqual(len(timeline), 3)
 
+    def test_includes_github_change_events(self):
+        records = [
+            ToolRecord(
+                name="github_get_commit",
+                call_id="g1",
+                arguments={"sha": "aaaa"},
+                output={
+                    "sha": "aaaaaaaaaaaaaaaa",
+                    "message": "Remove DATABASE_URL",
+                    "authored_at": "2026-09-08T09:00:00Z",
+                },
+            ),
+            ToolRecord(
+                name="github_get_pull_request",
+                call_id="g2",
+                arguments={"number": 42},
+                output={
+                    "number": 42,
+                    "title": "Clean up payment config",
+                    "merged_at": "2026-09-08T09:05:00Z",
+                },
+            ),
+        ]
+        timeline = build_timeline(records)
+        self.assertEqual(len(timeline), 2)
+        self.assertIn("Source commit", timeline[0].event)
+        self.assertIn("Pull request #42", timeline[1].event)
+
 
 if __name__ == "__main__":
     unittest.main()

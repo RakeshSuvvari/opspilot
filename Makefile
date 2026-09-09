@@ -12,12 +12,16 @@ QUERY ?= Investigate the current Kubernetes incident. Identify the most likely r
 RAG_QUERY ?= crashloop missing database configuration
 EVAL_CASE ?= INC-001
 EVAL_CASES ?= evals/cases/incidents.jsonl
+PHASE6_EVAL_CASES ?= evals/cases/incidents-phase6.jsonl
+GITHUB_MCP_URL ?= http://localhost:8090/mcp
 
 .PHONY: help verify cluster-up cluster-down build-images load-images deploy-base reset-demo status logs-checkout logs-payment logs-inventory incident-1 incident-2 incident-3 incident-4 \
 	build-k8s-mcp-image load-k8s-mcp-image deploy-k8s-mcp restart-k8s-mcp restore-k8s-mcp-rbac status-k8s-mcp logs-k8s-mcp port-forward-k8s-mcp test-k8s-mcp smoke-k8s-mcp phase2-up \
 	agent-setup agent-test agent-tools investigate investigate-1 agent-api build-agent-image phase3-check \
 	db-create db-init db-check rag-ingest rag-search rag-stats phase4-check \
-	eval-case eval-1 eval-2 eval-3 eval-4 phase5-check
+	eval-case eval-1 eval-2 eval-3 eval-4 phase5-check \
+	github-mcp-server smoke-github-mcp test-github-mcp github-health investigate-1-change investigate-2-change investigate-3-change investigate-4-change \
+	eval-change-1 eval-change-2 eval-change-3 eval-change-4 phase6-check
 
 help:
 	@echo "OpsPilot"
@@ -68,6 +72,17 @@ help:
 	@echo "  make eval-3              - evaluate INC-003 (inject it first with make incident-3)"
 	@echo "  make eval-4              - evaluate INC-004 after triggering /checkout once"
 	@echo "  make phase5-check        - source checks + Phase 5 unit tests"
+	@echo ""
+
+	@echo "Phase 6 - GitHub deployment/source-change correlation"
+	@echo "  make github-mcp-server  - run the Go GitHub MCP server on localhost:8090 (fixture by default)"
+	@echo "  make smoke-github-mcp   - list/call GitHub MCP tools without using OpenAI"
+	@echo "  make investigate-1-change - investigate INC-001 with GitHub correlation enabled"
+	@echo "  make investigate-2-change - investigate INC-002 with GitHub correlation enabled"
+	@echo "  make investigate-3-change - investigate INC-003 with GitHub correlation enabled"
+	@echo "  make investigate-4-change - investigate INC-004 with GitHub correlation enabled"
+	@echo "  make eval-change-1      - Phase 6 change-aware evaluation for INC-001"
+	@echo "  make phase6-check       - source checks + Python tests + GitHub MCP formatting/tests"
 	@echo ""
 	@echo "  make cluster-down        - delete local cluster"
 
@@ -276,3 +291,54 @@ eval-4: agent-setup
 phase5-check: agent-test
 	./scripts/verify-source.sh
 	@echo "Phase 5 source checks passed. Next: inject an incident and run make eval-case EVAL_CASE=INC-00X"
+
+
+# Phase 6 - read-only GitHub change intelligence
+github-mcp-server:
+	@if [ -f .env ]; then set -a; source .env; set +a; fi; \
+		go run ./services/github-mcp-server/cmd/server
+
+github-health:
+	curl -s http://localhost:8090/healthz
+
+smoke-github-mcp:
+	cd services/github-mcp-server && go run ./cmd/smoke -endpoint $(GITHUB_MCP_URL)
+
+test-github-mcp:
+	cd services/github-mcp-server && go test ./...
+
+investigate-1-change: agent-setup
+	@if [ -f .env ]; then set -a; source .env; set +a; fi; \
+		OPSPILOT_GITHUB_ENABLED=true $(AGENT_PYTHON) -m opspilot_agent.cli investigate --namespace $(NAMESPACE) --query "Why is the payment service failing and repeatedly restarting? Diagnose the live failure and correlate it with the deployed source change."
+
+investigate-2-change: agent-setup
+	@if [ -f .env ]; then set -a; source .env; set +a; fi; \
+		OPSPILOT_GITHUB_ENABLED=true $(AGENT_PYTHON) -m opspilot_agent.cli investigate --namespace $(NAMESPACE) --query "Why is checkout repeatedly terminating? Diagnose the live failure and determine whether the deployed source change altered memory configuration."
+
+investigate-3-change: agent-setup
+	@if [ -f .env ]; then set -a; source .env; set +a; fi; \
+		OPSPILOT_GITHUB_ENABLED=true $(AGENT_PYTHON) -m opspilot_agent.cli investigate --namespace $(NAMESPACE) --query "Why is inventory running but not becoming Ready? Diagnose the probe issue and correlate it with the deployed change."
+
+investigate-4-change: agent-setup
+	@if [ -f .env ]; then set -a; source .env; set +a; fi; \
+		OPSPILOT_GITHUB_ENABLED=true $(AGENT_PYTHON) -m opspilot_agent.cli investigate --namespace $(NAMESPACE) --query "Checkout returns service unavailable when calling inventory. Diagnose the live timeout and correlate the deployed source/config change."
+
+eval-change-1: agent-setup
+	@if [ -f .env ]; then set -a; source .env; set +a; fi; \
+		OPSPILOT_GITHUB_ENABLED=true $(AGENT_PYTHON) -m opspilot_agent.evals.cli --cases $(PHASE6_EVAL_CASES) --case INC-001-GIT --namespace $(NAMESPACE)
+
+eval-change-2: agent-setup
+	@if [ -f .env ]; then set -a; source .env; set +a; fi; \
+		OPSPILOT_GITHUB_ENABLED=true $(AGENT_PYTHON) -m opspilot_agent.evals.cli --cases $(PHASE6_EVAL_CASES) --case INC-002-GIT --namespace $(NAMESPACE)
+
+eval-change-3: agent-setup
+	@if [ -f .env ]; then set -a; source .env; set +a; fi; \
+		OPSPILOT_GITHUB_ENABLED=true $(AGENT_PYTHON) -m opspilot_agent.evals.cli --cases $(PHASE6_EVAL_CASES) --case INC-003-GIT --namespace $(NAMESPACE)
+
+eval-change-4: agent-setup
+	@if [ -f .env ]; then set -a; source .env; set +a; fi; \
+		OPSPILOT_GITHUB_ENABLED=true $(AGENT_PYTHON) -m opspilot_agent.evals.cli --cases $(PHASE6_EVAL_CASES) --case INC-004-GIT --namespace $(NAMESPACE)
+
+phase6-check: agent-test
+	./scripts/verify-source.sh
+	@echo "Phase 6 source checks passed. Start make github-mcp-server in another terminal, then use make investigate-1-change."

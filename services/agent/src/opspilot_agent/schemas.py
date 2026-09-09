@@ -38,6 +38,16 @@ class TimelineEvent(BaseModel):
     event: str = Field(description="Deterministic incident event derived from tool output.")
 
 
+class ChangeCorrelation(BaseModel):
+    repository: str | None = None
+    current_revision: str | None = None
+    previous_revision: str | None = None
+    commit_sha: str | None = None
+    pull_request_number: int | None = None
+    summary: str
+    causal_link: str
+
+
 class AgentIncidentReport(BaseModel):
     """Structured model output before OpsPilot's deterministic trust layer is applied."""
 
@@ -50,6 +60,7 @@ class AgentIncidentReport(BaseModel):
     evidence: list[EvidenceItem]
     remediation: list[str]
     follow_up_checks: list[str]
+    change_correlation: ChangeCorrelation | None = None
 
 
 class EvidenceAssessment(BaseModel):
@@ -59,6 +70,7 @@ class EvidenceAssessment(BaseModel):
     model_confidence: Confidence
     live_source_count: int = Field(ge=0)
     knowledge_used: bool
+    change_intelligence_used: bool
     corroborated: bool
     reasons: list[str]
 
@@ -87,6 +99,7 @@ class IncidentReport(BaseModel):
     timeline: list[TimelineEvent]
     remediation: list[str]
     follow_up_checks: list[str]
+    change_correlation: ChangeCorrelation | None = None
     tools_used: list[str]
     assessment: EvidenceAssessment
     metrics: RunMetrics

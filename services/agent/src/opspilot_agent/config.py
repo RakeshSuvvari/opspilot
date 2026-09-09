@@ -37,6 +37,8 @@ class Settings:
     openai_api_key: str
     openai_model: str
     k8s_mcp_url: str
+    github_enabled: bool
+    github_mcp_url: str
     default_namespace: str
     max_turns: int
     mcp_timeout_seconds: float
@@ -62,49 +64,29 @@ class Settings:
     def from_env(cls) -> "Settings":
         settings = cls(
             openai_api_key=os.getenv("OPENAI_API_KEY", "").strip(),
-            openai_model=os.getenv("OPENAI_MODEL", "gpt-5.6-terra").strip(),
-            k8s_mcp_url=os.getenv(
-                "OPSPILOT_K8S_MCP_URL", "http://localhost:8080/mcp"
-            ).strip(),
-            default_namespace=os.getenv(
-                "OPSPILOT_DEFAULT_NAMESPACE", "opspilot-demo"
-            ).strip(),
+            openai_model=os.getenv("OPENAI_MODEL", "gpt-5.4-mini").strip(),
+            k8s_mcp_url=os.getenv("OPSPILOT_K8S_MCP_URL", "http://localhost:8080/mcp").strip(),
+            github_enabled=_env_bool("OPSPILOT_GITHUB_ENABLED", False),
+            github_mcp_url=os.getenv("OPSPILOT_GITHUB_MCP_URL", "http://localhost:8090/mcp").strip(),
+            default_namespace=os.getenv("OPSPILOT_DEFAULT_NAMESPACE", "opspilot-demo").strip(),
             max_turns=_env_int("OPSPILOT_AGENT_MAX_TURNS", 12),
-            mcp_timeout_seconds=_env_float(
-                "OPSPILOT_AGENT_MCP_TIMEOUT_SECONDS", 10.0
-            ),
+            mcp_timeout_seconds=_env_float("OPSPILOT_AGENT_MCP_TIMEOUT_SECONDS", 10.0),
             mcp_retries=_env_int("OPSPILOT_AGENT_MCP_RETRIES", 2, minimum=0),
-            trace_sensitive_data=_env_bool(
-                "OPSPILOT_AGENT_TRACE_SENSITIVE_DATA", False
-            ),
+            trace_sensitive_data=_env_bool("OPSPILOT_AGENT_TRACE_SENSITIVE_DATA", False),
             disable_tracing=_env_bool("OPSPILOT_AGENT_DISABLE_TRACING", False),
             host=os.getenv("OPSPILOT_AGENT_HOST", "127.0.0.1").strip(),
             port=_env_int("OPSPILOT_AGENT_PORT", 8001),
             rag_enabled=_env_bool("OPSPILOT_RAG_ENABLED", True),
-            database_url=os.getenv(
-                "OPSPILOT_DATABASE_URL",
-                os.getenv("DATABASE_URL", "postgresql://postgres@localhost:5432/opspilot"),
-            ).strip(),
-            postgres_admin_url=os.getenv(
-                "OPSPILOT_POSTGRES_ADMIN_URL",
-                "postgresql://postgres@localhost:5432/postgres",
-            ).strip(),
-            embedding_model=os.getenv(
-                "OPSPILOT_EMBEDDING_MODEL", "text-embedding-3-small"
-            ).strip(),
+            database_url=os.getenv("OPSPILOT_DATABASE_URL", os.getenv("DATABASE_URL", "postgresql://postgres@localhost:5432/opspilot")).strip(),
+            postgres_admin_url=os.getenv("OPSPILOT_POSTGRES_ADMIN_URL", "postgresql://postgres@localhost:5432/postgres").strip(),
+            embedding_model=os.getenv("OPSPILOT_EMBEDDING_MODEL", "text-embedding-3-small").strip(),
             embedding_dimensions=_env_int("OPSPILOT_EMBEDDING_DIMENSIONS", 1536),
             rag_top_k=_env_int("OPSPILOT_RAG_TOP_K", 5),
-            rag_min_similarity=_env_float(
-                "OPSPILOT_RAG_MIN_SIMILARITY", 0.30, minimum=0.0
-            ),
+            rag_min_similarity=_env_float("OPSPILOT_RAG_MIN_SIMILARITY", 0.30, minimum=0.0),
             rag_chunk_chars=_env_int("OPSPILOT_RAG_CHUNK_CHARS", 1600, minimum=200),
-            rag_chunk_overlap_chars=_env_int(
-                "OPSPILOT_RAG_CHUNK_OVERLAP_CHARS", 200, minimum=0
-            ),
+            rag_chunk_overlap_chars=_env_int("OPSPILOT_RAG_CHUNK_OVERLAP_CHARS", 200, minimum=0),
             save_run_artifacts=_env_bool("OPSPILOT_SAVE_RUN_ARTIFACTS", True),
-            run_artifact_dir=os.getenv(
-                "OPSPILOT_RUN_ARTIFACT_DIR", ".opspilot/runs"
-            ).strip(),
+            run_artifact_dir=os.getenv("OPSPILOT_RUN_ARTIFACT_DIR", ".opspilot/runs").strip(),
             timeline_max_events=_env_int("OPSPILOT_TIMELINE_MAX_EVENTS", 20),
         )
         settings.validate()
@@ -121,17 +103,12 @@ class Settings:
         if not self.default_namespace:
             raise ValueError("OPSPILOT_DEFAULT_NAMESPACE cannot be empty")
 
-        parsed = urlparse(self.k8s_mcp_url)
-        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
-            raise ValueError(
-                "OPSPILOT_K8S_MCP_URL must be an http(s) URL, for example "
-                "http://localhost:8080/mcp"
-            )
+        for name, url in (("OPSPILOT_K8S_MCP_URL", self.k8s_mcp_url), ("OPSPILOT_GITHUB_MCP_URL", self.github_mcp_url)):
+            parsed = urlparse(url)
+            if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+                raise ValueError(f"{name} must be an http(s) URL")
 
-        for name, url in (
-            ("OPSPILOT_DATABASE_URL", self.database_url),
-            ("OPSPILOT_POSTGRES_ADMIN_URL", self.postgres_admin_url),
-        ):
+        for name, url in (("OPSPILOT_DATABASE_URL", self.database_url), ("OPSPILOT_POSTGRES_ADMIN_URL", self.postgres_admin_url)):
             parsed_db = urlparse(url)
             if parsed_db.scheme not in {"postgres", "postgresql"} or not parsed_db.netloc:
                 raise ValueError(f"{name} must be a PostgreSQL connection URL")
@@ -139,17 +116,13 @@ class Settings:
         if not self.embedding_model:
             raise ValueError("OPSPILOT_EMBEDDING_MODEL cannot be empty")
         if self.embedding_dimensions != 1536:
-            raise ValueError(
-                "Phase 4 schema uses vector(1536); set OPSPILOT_EMBEDDING_DIMENSIONS=1536"
-            )
+            raise ValueError("Phase 4 schema uses vector(1536); set OPSPILOT_EMBEDDING_DIMENSIONS=1536")
         if self.rag_top_k > 10:
             raise ValueError("OPSPILOT_RAG_TOP_K must be <= 10")
         if self.rag_min_similarity > 1.0:
             raise ValueError("OPSPILOT_RAG_MIN_SIMILARITY must be <= 1.0")
         if self.rag_chunk_overlap_chars >= self.rag_chunk_chars:
-            raise ValueError(
-                "OPSPILOT_RAG_CHUNK_OVERLAP_CHARS must be smaller than OPSPILOT_RAG_CHUNK_CHARS"
-            )
+            raise ValueError("OPSPILOT_RAG_CHUNK_OVERLAP_CHARS must be smaller than OPSPILOT_RAG_CHUNK_CHARS")
         if not self.run_artifact_dir:
             raise ValueError("OPSPILOT_RUN_ARTIFACT_DIR cannot be empty")
         if self.timeline_max_events > 100:
@@ -157,9 +130,7 @@ class Settings:
 
     def require_openai_key(self) -> None:
         if not self.openai_api_key:
-            raise ValueError(
-                "OPENAI_API_KEY is not set. Add it to your shell environment or .env file."
-            )
+            raise ValueError("OPENAI_API_KEY is not set. Add it to your shell environment or .env file.")
 
     def require_database(self) -> None:
         if not self.database_url:

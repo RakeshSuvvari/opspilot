@@ -25,6 +25,7 @@ class SchemaTests(unittest.TestCase):
                     "model_confidence": "high",
                     "live_source_count": 2,
                     "knowledge_used": False,
+                    "change_intelligence_used": False,
                     "corroborated": True,
                     "reasons": [],
                 },

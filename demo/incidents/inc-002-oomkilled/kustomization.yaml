@@ -15,3 +15,13 @@ patches:
       - op: replace
         path: /spec/template/spec/containers/0/resources/limits/memory
         value: 64Mi
+
+  - target:
+      group: apps
+      version: v1
+      kind: Deployment
+      name: checkout
+    patch: |-
+      - op: replace
+        path: /metadata/annotations/opspilot.dev~1revision
+        value: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"

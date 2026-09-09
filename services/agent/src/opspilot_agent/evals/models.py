@@ -15,6 +15,9 @@ class EvaluationCase(BaseModel):
     expect_knowledge: bool = True
     minimum_timeline_events: int = 1
     pass_score: int = 80
+    expect_change_correlation: bool = False
+    required_change_tools: list[str] = Field(default_factory=list)
+    expected_change_signal_groups: list[list[str]] = Field(default_factory=list)
 
 
 class EvaluationBreakdown(BaseModel):
@@ -25,6 +28,7 @@ class EvaluationBreakdown(BaseModel):
     confidence: float
     knowledge: float
     timeline: float
+    change_correlation: float = 0.0
 
 
 class EvaluationResult(BaseModel):
@@ -34,4 +38,6 @@ class EvaluationResult(BaseModel):
     breakdown: EvaluationBreakdown
     missing_root_cause_groups: list[list[str]]
     missing_tools: list[str]
+    missing_change_groups: list[list[str]] = Field(default_factory=list)
+    missing_change_tools: list[str] = Field(default_factory=list)
     report: IncidentReport

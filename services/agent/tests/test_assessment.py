@@ -35,7 +35,16 @@ class AssessmentTests(unittest.TestCase):
         self.assertEqual(assessment.confidence, Confidence.HIGH)
         self.assertTrue(assessment.corroborated)
         self.assertTrue(assessment.knowledge_used)
+        self.assertFalse(assessment.change_intelligence_used)
         self.assertEqual(assessment.evidence_score, 100)
+
+    def test_github_tools_are_recorded_as_change_intelligence(self):
+        assessment = assess_evidence(
+            self._report(),
+            ["k8s_list_pods", "k8s_get_deployment", "k8s_get_pod_logs", "github_compare_commits"],
+        )
+        self.assertTrue(assessment.change_intelligence_used)
+        self.assertEqual(assessment.confidence, Confidence.HIGH)
 
     def test_single_live_source_caps_confidence(self):
         assessment = assess_evidence(self._report(), ["k8s_list_pods"])

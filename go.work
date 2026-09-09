@@ -5,4 +5,5 @@ use (
     ./demo/services/payment
     ./demo/services/inventory
     ./services/k8s-mcp-server
+    ./services/github-mcp-server
 )

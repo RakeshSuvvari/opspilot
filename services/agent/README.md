@@ -1,45 +1,11 @@
-# OpsPilot Agent Service (Phases 3–5)
+# OpsPilot Agent
 
-The Python service orchestrates the OpenAI incident agent, the read-only Go Kubernetes MCP server,
-the PostgreSQL/pgvector knowledge base, and the Phase 5 trust/evaluation layer.
+Python agent/orchestration layer for OpsPilot. It combines the Go Kubernetes MCP server, optional Go GitHub MCP server, PostgreSQL/pgvector RAG, deterministic trust/evaluation, and OpenAI Agents SDK.
 
-## Responsibilities
+Phase 6 adds optional GitHub change intelligence. Keep `OPSPILOT_GITHUB_ENABLED=false` for ordinary investigations, or start the GitHub MCP server and enable it for deployment/source-change correlation.
 
-- Connect to the Go Kubernetes MCP server with Streamable HTTP.
-- Let the OpenAI agent autonomously select Kubernetes diagnostic tools.
-- Expose `search_knowledge` for RAG over runbooks, incidents, postmortems, and architecture docs.
-- Return a typed incident analysis from the LLM.
-- Derive actual `tools_used` from SDK run items instead of model self-reporting.
-- Build deterministic timelines from timestamped Kubernetes tool outputs.
-- Calculate evidence/confidence coverage separately from the model's confidence.
-- Record request/token/tool-call/latency metrics and local run artifacts.
-- Score known incident runs with deterministic evaluation cases.
-
-## Setup
-
-From the repository root:
+Default model configuration:
 
 ```bash
-make agent-setup
-make agent-test
+OPENAI_MODEL=gpt-5.4-mini
 ```
-
-Database/RAG setup:
-
-```bash
-make db-create
-make db-init
-make rag-ingest
-make rag-search RAG_QUERY="crashloop missing database configuration"
-```
-
-With the Go MCP server port-forward running:
-
-```bash
-make agent-tools
-make incident-1
-make investigate-1
-make eval-1
-```
-
-Run artifacts are stored in `.opspilot/runs/`; evaluation artifacts are stored in `.opspilot/evals/` by default.

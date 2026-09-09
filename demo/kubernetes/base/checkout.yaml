@@ -5,6 +5,10 @@ metadata:
   namespace: opspilot-demo
   labels:
     app: checkout
+  annotations:
+    opspilot.dev/repository: "opspilot-demo/opspilot-demo-services"
+    opspilot.dev/revision: "1111111111111111111111111111111111111111"
+    opspilot.dev/previous-revision: "1111111111111111111111111111111111111111"
 spec:
   replicas: 1
   selector:

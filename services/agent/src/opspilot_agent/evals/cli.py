@@ -60,6 +60,12 @@ async def _evaluate(args: argparse.Namespace) -> int:
             print("\nMissing root-cause signal groups:")
             for group in result.missing_root_cause_groups:
                 print(f"- {' | '.join(group)}")
+        if result.missing_change_tools:
+            print(f"\nMissing change tools: {', '.join(result.missing_change_tools)}")
+        if result.missing_change_groups:
+            print("\nMissing change-correlation signal groups:")
+            for group in result.missing_change_groups:
+                print(f"- {' | '.join(group)}")
         print(f"\nRoot cause: {result.report.root_cause}")
         print(f"Confidence: {result.report.confidence.value}")
         print(f"Tools: {', '.join(result.report.tools_used)}")

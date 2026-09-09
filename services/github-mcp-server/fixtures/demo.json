@@ -1,0 +1,172 @@
+{
+  "repository": {
+    "owner": "opspilot-demo",
+    "name": "opspilot-demo-services",
+    "default_branch": "main"
+  },
+  "commits": [
+    {
+      "sha": "1111111111111111111111111111111111111111",
+      "message": "Baseline demo deployment configuration",
+      "authored_at": "2026-09-07T18:30:00Z",
+      "author": {"name": "OpsPilot Demo", "login": "opspilot-demo"},
+      "html_url": "https://github.com/opspilot-demo/opspilot-demo-services/commit/1111111111111111111111111111111111111111",
+      "parents": [],
+      "files": []
+    },
+    {
+      "sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "message": "Remove legacy payment database URL from deployment",
+      "authored_at": "2026-09-07T19:45:00Z",
+      "author": {"name": "Demo Developer", "login": "demo-dev"},
+      "html_url": "https://github.com/opspilot-demo/opspilot-demo-services/commit/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "parents": ["1111111111111111111111111111111111111111"],
+      "files": [
+        {
+          "filename": "demo/kubernetes/base/payment.yaml",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 2,
+          "changes": 2,
+          "patch": "@@ -24,8 +24,6 @@ env:\n             - name: PORT\n               value: \"8080\"\n-            - name: DATABASE_URL\n-              valueFrom: secretKeyRef: payment-db\n"
+        }
+      ]
+    },
+    {
+      "sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "message": "Reduce checkout memory limit for efficiency test",
+      "authored_at": "2026-09-07T19:46:00Z",
+      "author": {"name": "Demo Developer", "login": "demo-dev"},
+      "html_url": "https://github.com/opspilot-demo/opspilot-demo-services/commit/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "parents": ["1111111111111111111111111111111111111111"],
+      "files": [
+        {
+          "filename": "demo/kubernetes/base/checkout.yaml",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 2,
+          "changes": 4,
+          "patch": "@@ resources/env @@\n-              value: \"0\" # MEMORY_HOG_MB\n+              value: \"192\"\n-              memory: 128Mi\n+              memory: 64Mi\n"
+        }
+      ]
+    },
+    {
+      "sha": "cccccccccccccccccccccccccccccccccccccccc",
+      "message": "Point inventory readiness check to alternate port",
+      "authored_at": "2026-09-07T19:47:00Z",
+      "author": {"name": "Demo Developer", "login": "demo-dev"},
+      "html_url": "https://github.com/opspilot-demo/opspilot-demo-services/commit/cccccccccccccccccccccccccccccccccccccccc",
+      "parents": ["1111111111111111111111111111111111111111"],
+      "files": [
+        {
+          "filename": "demo/kubernetes/base/inventory.yaml",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1,
+          "changes": 2,
+          "patch": "@@ readinessProbe @@\n-              port: http # resolves to 8080\n+              port: 8081\n"
+        }
+      ]
+    },
+    {
+      "sha": "dddddddddddddddddddddddddddddddddddddddd",
+      "message": "Tighten checkout inventory timeout and add latency simulation",
+      "authored_at": "2026-09-07T19:48:00Z",
+      "author": {"name": "Demo Developer", "login": "demo-dev"},
+      "html_url": "https://github.com/opspilot-demo/opspilot-demo-services/commit/dddddddddddddddddddddddddddddddddddddddd",
+      "parents": ["1111111111111111111111111111111111111111"],
+      "files": [
+        {
+          "filename": "demo/kubernetes/base/checkout.yaml",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1,
+          "changes": 2,
+          "patch": "@@ env @@\n-              value: \"500\" # INVENTORY_TIMEOUT_MS\n+              value: \"50\"\n"
+        },
+        {
+          "filename": "demo/kubernetes/base/inventory.yaml",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1,
+          "changes": 2,
+          "patch": "@@ env @@\n-              value: \"100\" # RESPONSE_DELAY_MS\n+              value: \"180\"\n"
+        }
+      ]
+    }
+  ],
+  "pull_requests": [
+    {
+      "number": 42,
+      "title": "Clean up payment deployment configuration",
+      "state": "closed",
+      "merged": true,
+      "merged_at": "2026-09-07T19:50:00Z",
+      "base_ref": "main",
+      "head_ref": "cleanup/payment-config",
+      "head_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "author": "demo-dev",
+      "body": "Removes the legacy DATABASE_URL injection while migrating payment configuration. The replacement Secret wiring was not included in this change.",
+      "html_url": "https://github.com/opspilot-demo/opspilot-demo-services/pull/42",
+      "commits": 1,
+      "additions": 0,
+      "deletions": 2,
+      "changed_files": 1,
+      "commit_shas": ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"]
+    },
+    {
+      "number": 43,
+      "title": "Reduce checkout resource footprint",
+      "state": "closed",
+      "merged": true,
+      "merged_at": "2026-09-07T19:51:00Z",
+      "base_ref": "main",
+      "head_ref": "perf/checkout-memory",
+      "head_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "author": "demo-dev",
+      "body": "Lowers the checkout memory limit to 64Mi while enabling a 192Mi allocation test.",
+      "html_url": "https://github.com/opspilot-demo/opspilot-demo-services/pull/43",
+      "commits": 1,
+      "additions": 2,
+      "deletions": 2,
+      "changed_files": 1,
+      "commit_shas": ["bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"]
+    },
+    {
+      "number": 44,
+      "title": "Move inventory readiness probe to port 8081",
+      "state": "closed",
+      "merged": true,
+      "merged_at": "2026-09-07T19:52:00Z",
+      "base_ref": "main",
+      "head_ref": "ops/inventory-readiness",
+      "head_sha": "cccccccccccccccccccccccccccccccccccccccc",
+      "author": "demo-dev",
+      "body": "Changes the readiness probe port from the named HTTP port (8080) to 8081.",
+      "html_url": "https://github.com/opspilot-demo/opspilot-demo-services/pull/44",
+      "commits": 1,
+      "additions": 1,
+      "deletions": 1,
+      "changed_files": 1,
+      "commit_shas": ["cccccccccccccccccccccccccccccccccccccccc"]
+    },
+    {
+      "number": 45,
+      "title": "Tune inventory request timeout",
+      "state": "closed",
+      "merged": true,
+      "merged_at": "2026-09-07T19:53:00Z",
+      "base_ref": "main",
+      "head_ref": "perf/inventory-timeout",
+      "head_sha": "dddddddddddddddddddddddddddddddddddddddd",
+      "author": "demo-dev",
+      "body": "Reduces checkout's inventory timeout to 50ms and increases the test inventory response delay to 180ms.",
+      "html_url": "https://github.com/opspilot-demo/opspilot-demo-services/pull/45",
+      "commits": 1,
+      "additions": 2,
+      "deletions": 2,
+      "changed_files": 2,
+      "commit_shas": ["dddddddddddddddddddddddddddddddddddddddd"]
+    }
+  ]
+}

@@ -49,6 +49,20 @@ def _print_report(report: IncidentReport) -> None:
     for step in report.remediation:
         print(f"- {step}")
 
+    if report.change_correlation is not None:
+        change = report.change_correlation
+        print("\nDeployment/source change correlation")
+        if change.repository:
+            print(f"- Repository: {change.repository}")
+        if change.current_revision:
+            print(f"- Current revision: {change.current_revision}")
+        if change.previous_revision:
+            print(f"- Previous revision: {change.previous_revision}")
+        if change.pull_request_number:
+            print(f"- Pull request: #{change.pull_request_number}")
+        print(f"- Change: {change.summary}")
+        print(f"- Causal link: {change.causal_link}")
+
     if report.follow_up_checks:
         print("\nFollow-up checks")
         for step in report.follow_up_checks:
@@ -58,6 +72,7 @@ def _print_report(report: IncidentReport) -> None:
     print(f"- Live sources: {report.assessment.live_source_count}")
     print(f"- Corroborated: {'yes' if report.assessment.corroborated else 'no'}")
     print(f"- RAG used: {'yes' if report.assessment.knowledge_used else 'no'}")
+    print(f"- GitHub change intelligence: {'yes' if report.assessment.change_intelligence_used else 'no'}")
     print(f"- Model confidence: {report.assessment.model_confidence.value}")
     for reason in report.assessment.reasons:
         print(f"- {reason}")
@@ -77,7 +92,7 @@ def _print_report(report: IncidentReport) -> None:
 async def _run_tools(settings: Settings) -> int:
     async with IncidentAgentRuntime(settings) as runtime:
         tools = await runtime.list_tools()
-        print("Connected to Kubernetes MCP server.")
+        print("Connected to OpsPilot MCP/tool services.")
         for tool in tools:
             print(f"- {tool}")
     return 0
@@ -102,7 +117,7 @@ def _parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     subparsers.add_parser(
-        "tools", help="Connect to the Go MCP server and list Kubernetes diagnostic tools"
+        "tools", help="Connect to configured MCP servers and list available diagnostic/change tools"
     )
 
     investigate = subparsers.add_parser(

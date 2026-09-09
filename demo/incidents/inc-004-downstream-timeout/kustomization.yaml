@@ -21,3 +21,23 @@ patches:
       - op: replace
         path: /spec/template/spec/containers/0/env/1/value
         value: "180"
+
+  - target:
+      group: apps
+      version: v1
+      kind: Deployment
+      name: checkout
+    patch: |-
+      - op: replace
+        path: /metadata/annotations/opspilot.dev~1revision
+        value: "dddddddddddddddddddddddddddddddddddddddd"
+
+  - target:
+      group: apps
+      version: v1
+      kind: Deployment
+      name: inventory
+    patch: |-
+      - op: replace
+        path: /metadata/annotations/opspilot.dev~1revision
+        value: "dddddddddddddddddddddddddddddddddddddddd"

@@ -38,11 +38,7 @@ def _pod_timeline(output: dict[str, Any], events: list[TimelineEvent]) -> None:
         status = condition.get("status", "unknown")
         reason = condition.get("reason")
         suffix = f" ({reason})" if reason else ""
-        _append(
-            events,
-            condition.get("last_transition_time"),
-            f"Pod {pod_name} condition {condition_type} became {status}{suffix}.",
-        )
+        _append(events, condition.get("last_transition_time"), f"Pod {pod_name} condition {condition_type} became {status}{suffix}.")
 
     containers = output.get("container_details") or output.get("containers") or []
     for container in containers:
@@ -53,16 +49,8 @@ def _pod_timeline(output: dict[str, Any], events: list[TimelineEvent]) -> None:
         reason = container.get("last_termination_reason") or container.get("reason") or "terminated"
         exit_code = container.get("last_exit_code")
         exit_suffix = f" with exit code {exit_code}" if exit_code not in (None, 0) else ""
-        _append(
-            events,
-            container.get("last_finished_at"),
-            f"Container {pod_name}/{name} last terminated as {reason}{exit_suffix}.",
-        )
-        _append(
-            events,
-            container.get("finished_at"),
-            f"Container {pod_name}/{name} terminated as {reason}{exit_suffix}.",
-        )
+        _append(events, container.get("last_finished_at"), f"Container {pod_name}/{name} last terminated as {reason}{exit_suffix}.")
+        _append(events, container.get("finished_at"), f"Container {pod_name}/{name} terminated as {reason}{exit_suffix}.")
 
 
 def _event_timeline(output: dict[str, Any], events: list[TimelineEvent]) -> None:
@@ -74,7 +62,6 @@ def _event_timeline(output: dict[str, Any], events: list[TimelineEvent]) -> None
         message = item.get("message", "")
         count = item.get("count", 1)
         description = f"{resource}: {reason} — {message}".strip(" —")
-
         first = item.get("first_timestamp")
         last = item.get("last_timestamp")
         _append(events, first, f"First observed {description}.")
@@ -92,16 +79,30 @@ def _deployment_timeline(output: dict[str, Any], events: list[TimelineEvent]) ->
         status = condition.get("status", "unknown")
         reason = condition.get("reason")
         suffix = f" ({reason})" if reason else ""
-        _append(
-            events,
-            condition.get("last_transition_time"),
-            f"Deployment {name} condition {condition_type} became {status}{suffix}.",
-        )
+        _append(events, condition.get("last_transition_time"), f"Deployment {name} condition {condition_type} became {status}{suffix}.")
+
+
+def _commit_timeline(output: dict[str, Any], events: list[TimelineEvent]) -> None:
+    sha = output.get("sha", "")
+    message = str(output.get("message", "")).splitlines()[0]
+    _append(events, output.get("authored_at"), f"Source commit {sha[:12]} authored: {message}.")
+
+
+def _compare_timeline(output: dict[str, Any], events: list[TimelineEvent]) -> None:
+    for commit in output.get("commits") or []:
+        if isinstance(commit, dict):
+            _commit_timeline(commit, events)
+
+
+def _pull_request_timeline(output: dict[str, Any], events: list[TimelineEvent]) -> None:
+    number = output.get("number")
+    title = output.get("title", "")
+    if number:
+        _append(events, output.get("merged_at"), f"Pull request #{number} merged: {title}.")
 
 
 def build_timeline(records: list[ToolRecord], max_events: int = 20) -> list[TimelineEvent]:
     events: list[TimelineEvent] = []
-
     for record in records:
         output = record.output
         if not isinstance(output, dict):
@@ -116,10 +117,15 @@ def build_timeline(records: list[ToolRecord], max_events: int = 20) -> list[Time
             _event_timeline(output, events)
         elif record.name == "k8s_get_deployment":
             _deployment_timeline(output, events)
+        elif record.name == "github_get_commit":
+            _commit_timeline(output, events)
+        elif record.name == "github_compare_commits":
+            _compare_timeline(output, events)
+        elif record.name == "github_get_pull_request":
+            _pull_request_timeline(output, events)
 
     deduplicated: dict[tuple[str, str], TimelineEvent] = {}
     for event in events:
         deduplicated[(event.timestamp, event.event)] = event
-
     ordered = sorted(deduplicated.values(), key=lambda item: _timestamp_key(item.timestamp))
     return ordered[-max_events:]

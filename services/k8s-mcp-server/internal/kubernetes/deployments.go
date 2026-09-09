@@ -14,16 +14,18 @@ func (c *Client) GetDeployment(ctx context.Context, namespace, name string) (Dep
 	}
 
 	result := DeploymentDetails{
-		Name:               deployment.Name,
-		Namespace:          deployment.Namespace,
-		Generation:         deployment.Generation,
-		ObservedGeneration: deployment.Status.ObservedGeneration,
-		ReadyReplicas:      deployment.Status.ReadyReplicas,
-		AvailableReplicas:  deployment.Status.AvailableReplicas,
-		UpdatedReplicas:    deployment.Status.UpdatedReplicas,
-		Strategy:           string(deployment.Spec.Strategy.Type),
-		Selector:           deployment.Spec.Selector.MatchLabels,
-		PodTemplateLabels:  deployment.Spec.Template.Labels,
+		Name:                   deployment.Name,
+		Namespace:              deployment.Namespace,
+		Generation:             deployment.Generation,
+		ObservedGeneration:     deployment.Status.ObservedGeneration,
+		ReadyReplicas:          deployment.Status.ReadyReplicas,
+		AvailableReplicas:      deployment.Status.AvailableReplicas,
+		UpdatedReplicas:        deployment.Status.UpdatedReplicas,
+		Strategy:               string(deployment.Spec.Strategy.Type),
+		Selector:               deployment.Spec.Selector.MatchLabels,
+		Annotations:            deployment.Annotations,
+		PodTemplateLabels:      deployment.Spec.Template.Labels,
+		PodTemplateAnnotations: deployment.Spec.Template.Annotations,
 	}
 	if deployment.Spec.Replicas != nil {
 		result.Replicas = *deployment.Spec.Replicas

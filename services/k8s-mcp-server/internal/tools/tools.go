@@ -40,7 +40,7 @@ func (s *Server) Register(server *mcp.Server) {
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "k8s_get_deployment",
-		Description: "Inspect a Kubernetes Deployment including replicas, container images, resources, non-secret environment configuration, and readiness/liveness probes.",
+		Description: "Inspect a Kubernetes Deployment including replicas, container images, resources, non-secret environment configuration, readiness/liveness probes, and source provenance annotations such as repository/current/previous revision.",
 	}, s.getDeployment)
 }
 

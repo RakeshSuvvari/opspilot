@@ -15,7 +15,7 @@ from .rag.tool import build_search_knowledge_tool
 from .schemas import AgentIncidentReport, IncidentReport, RunMetrics
 from .timeline import build_timeline
 
-EXPECTED_MCP_TOOLS = {
+EXPECTED_K8S_MCP_TOOLS = {
     "k8s_list_pods",
     "k8s_get_pod",
     "k8s_get_pod_logs",
@@ -23,12 +23,20 @@ EXPECTED_MCP_TOOLS = {
     "k8s_get_deployment",
 }
 
+EXPECTED_GITHUB_MCP_TOOLS = {
+    "github_list_recent_commits",
+    "github_get_commit",
+    "github_compare_commits",
+    "github_find_pull_requests_for_commit",
+    "github_get_pull_request",
+}
+
 
 class IncidentAgentRuntime:
     def __init__(self, settings: Settings):
         self.settings = settings
         self._started = False
-        self._mcp = MCPServerStreamableHttp(
+        self._k8s_mcp = MCPServerStreamableHttp(
             name="OpsPilot Kubernetes MCP",
             params={
                 "url": settings.k8s_mcp_url,
@@ -39,15 +47,33 @@ class IncidentAgentRuntime:
             max_retry_attempts=settings.mcp_retries,
             require_approval="never",
         )
+        self._github_mcp = None
+        if settings.github_enabled:
+            self._github_mcp = MCPServerStreamableHttp(
+                name="OpsPilot GitHub MCP",
+                params={
+                    "url": settings.github_mcp_url,
+                    "timeout": settings.mcp_timeout_seconds,
+                },
+                cache_tools_list=True,
+                use_structured_content=True,
+                max_retry_attempts=settings.mcp_retries,
+                require_approval="never",
+            )
+
         local_tools = []
         if settings.rag_enabled:
             local_tools.append(build_search_knowledge_tool(settings))
+
+        mcp_servers = [self._k8s_mcp]
+        if self._github_mcp is not None:
+            mcp_servers.append(self._github_mcp)
 
         self._agent = Agent(
             name="OpsPilot Incident Investigator",
             instructions=SYSTEM_INSTRUCTIONS,
             model=settings.openai_model,
-            mcp_servers=[self._mcp],
+            mcp_servers=mcp_servers,
             tools=local_tools,
             output_type=AgentIncidentReport,
         )
@@ -57,29 +83,63 @@ class IncidentAgentRuntime:
             return
 
         set_tracing_disabled(self.settings.disable_tracing)
-        await self._mcp.connect()
-        self._started = True
+        try:
+            await self._k8s_mcp.connect()
+            if self._github_mcp is not None:
+                await self._github_mcp.connect()
+            self._started = True
 
-        available = set(await self.list_mcp_tools())
-        missing = EXPECTED_MCP_TOOLS - available
-        if missing:
+            available_k8s = set(await self.list_k8s_mcp_tools())
+            missing_k8s = EXPECTED_K8S_MCP_TOOLS - available_k8s
+            if missing_k8s:
+                missing_tools = ", ".join(sorted(missing_k8s))
+                raise RuntimeError(f"Kubernetes MCP server is missing tools: {missing_tools}")
+
+            if self._github_mcp is not None:
+                available_github = set(await self.list_github_mcp_tools())
+                missing_github = EXPECTED_GITHUB_MCP_TOOLS - available_github
+                if missing_github:
+                    missing_tools = ", ".join(sorted(missing_github))
+                    raise RuntimeError(f"GitHub MCP server is missing tools: {missing_tools}")
+        except Exception:
             await self.close()
-            missing_tools = ", ".join(sorted(missing))
-            raise RuntimeError(f"Kubernetes MCP server is missing tools: {missing_tools}")
+            raise
 
     async def close(self) -> None:
         if not self._started:
             return
+        errors: list[Exception] = []
+        if self._github_mcp is not None:
+            try:
+                await self._github_mcp.cleanup()
+            except Exception as exc:  # pragma: no cover - cleanup best effort
+                errors.append(exc)
         try:
-            await self._mcp.cleanup()
-        finally:
-            self._started = False
+            await self._k8s_mcp.cleanup()
+        except Exception as exc:  # pragma: no cover - cleanup best effort
+            errors.append(exc)
+        self._started = False
+        if errors:
+            raise errors[0]
 
-    async def list_mcp_tools(self) -> list[str]:
+    async def list_k8s_mcp_tools(self) -> list[str]:
         if not self._started:
             raise RuntimeError("IncidentAgentRuntime is not started")
-        tools = await self._mcp.list_tools()
+        tools = await self._k8s_mcp.list_tools()
         return sorted(tool.name for tool in tools)
+
+    async def list_github_mcp_tools(self) -> list[str]:
+        if not self._started:
+            raise RuntimeError("IncidentAgentRuntime is not started")
+        if self._github_mcp is None:
+            return []
+        tools = await self._github_mcp.list_tools()
+        return sorted(tool.name for tool in tools)
+
+    async def list_mcp_tools(self) -> list[str]:
+        tools = await self.list_k8s_mcp_tools()
+        tools.extend(await self.list_github_mcp_tools())
+        return sorted(tools)
 
     async def list_tools(self) -> list[str]:
         tools = await self.list_mcp_tools()
@@ -102,7 +162,11 @@ class IncidentAgentRuntime:
 
         result = await Runner.run(
             self._agent,
-            build_investigation_prompt(query, target_namespace),
+            build_investigation_prompt(
+                query,
+                target_namespace,
+                github_enabled=self.settings.github_enabled,
+            ),
             max_turns=self.settings.max_turns,
             run_config=RunConfig(
                 workflow_name="OpsPilot Incident Investigation",
@@ -112,8 +176,9 @@ class IncidentAgentRuntime:
                     "namespace": target_namespace,
                     "model": self.settings.openai_model,
                     "rag_enabled": str(self.settings.rag_enabled).lower(),
+                    "github_enabled": str(self.settings.github_enabled).lower(),
                     "component": "opspilot-agent",
-                    "phase": "5",
+                    "phase": "6",
                 },
             ),
         )
@@ -157,6 +222,7 @@ class IncidentAgentRuntime:
             timeline=timeline,
             remediation=agent_report.remediation,
             follow_up_checks=agent_report.follow_up_checks,
+            change_correlation=agent_report.change_correlation,
             tools_used=actual_tools,
             assessment=assessment,
             metrics=metrics,

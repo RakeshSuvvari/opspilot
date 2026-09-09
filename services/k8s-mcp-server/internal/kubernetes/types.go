@@ -93,19 +93,21 @@ type EventSummary struct {
 }
 
 type DeploymentDetails struct {
-	Name               string                `json:"name"`
-	Namespace          string                `json:"namespace"`
-	Generation         int64                 `json:"generation"`
-	ObservedGeneration int64                 `json:"observed_generation"`
-	Replicas           int32                 `json:"replicas"`
-	ReadyReplicas      int32                 `json:"ready_replicas"`
-	AvailableReplicas  int32                 `json:"available_replicas"`
-	UpdatedReplicas    int32                 `json:"updated_replicas"`
-	Strategy           string                `json:"strategy"`
-	Selector           map[string]string     `json:"selector,omitempty"`
-	PodTemplateLabels  map[string]string     `json:"pod_template_labels,omitempty"`
-	Containers         []DeploymentContainer `json:"containers"`
-	Conditions         []DeploymentCondition `json:"conditions,omitempty"`
+	Name                   string                `json:"name"`
+	Namespace              string                `json:"namespace"`
+	Generation             int64                 `json:"generation"`
+	ObservedGeneration     int64                 `json:"observed_generation"`
+	Replicas               int32                 `json:"replicas"`
+	ReadyReplicas          int32                 `json:"ready_replicas"`
+	AvailableReplicas      int32                 `json:"available_replicas"`
+	UpdatedReplicas        int32                 `json:"updated_replicas"`
+	Strategy               string                `json:"strategy"`
+	Selector               map[string]string     `json:"selector,omitempty"`
+	Annotations            map[string]string     `json:"annotations,omitempty"`
+	PodTemplateLabels      map[string]string     `json:"pod_template_labels,omitempty"`
+	PodTemplateAnnotations map[string]string     `json:"pod_template_annotations,omitempty"`
+	Containers             []DeploymentContainer `json:"containers"`
+	Conditions             []DeploymentCondition `json:"conditions,omitempty"`
 }
 
 type DeploymentContainer struct {

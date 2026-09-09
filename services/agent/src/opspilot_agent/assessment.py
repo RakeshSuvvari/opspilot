@@ -10,6 +10,11 @@ TOOL_WEIGHTS = {
     "k8s_get_events": 15,
     "k8s_get_deployment": 20,
     "search_knowledge": 5,
+    "github_list_recent_commits": 2,
+    "github_get_commit": 5,
+    "github_compare_commits": 10,
+    "github_find_pull_requests_for_commit": 5,
+    "github_get_pull_request": 5,
 }
 
 LIVE_TOOLS = {
@@ -26,6 +31,14 @@ DIRECT_DIAGNOSTIC_TOOLS = {
     "k8s_get_deployment",
 }
 
+GITHUB_TOOLS = {
+    "github_list_recent_commits",
+    "github_get_commit",
+    "github_compare_commits",
+    "github_find_pull_requests_for_commit",
+    "github_get_pull_request",
+}
+
 
 def _confidence_from_score(score: int) -> Confidence:
     if score >= 75:
@@ -35,10 +48,7 @@ def _confidence_from_score(score: int) -> Confidence:
     return Confidence.LOW
 
 
-def assess_evidence(
-    report: AgentIncidentReport,
-    actual_tools: list[str],
-) -> EvidenceAssessment:
+def assess_evidence(report: AgentIncidentReport, actual_tools: list[str]) -> EvidenceAssessment:
     unique_tools = set(actual_tools)
     live_tools = unique_tools & LIVE_TOOLS
     evidence_score = min(100, sum(TOOL_WEIGHTS.get(name, 0) for name in unique_tools))
@@ -71,6 +81,10 @@ def assess_evidence(
     if knowledge_used:
         reasons.append("RAG knowledge was used as supporting context, not as live cluster proof.")
 
+    change_intelligence_used = bool(unique_tools & GITHUB_TOOLS)
+    if change_intelligence_used:
+        reasons.append("GitHub change intelligence was used to correlate deployed source changes with live evidence.")
+
     confidence = _confidence_from_score(confidence_score)
     return EvidenceAssessment(
         evidence_score=evidence_score,
@@ -79,6 +93,7 @@ def assess_evidence(
         model_confidence=report.confidence,
         live_source_count=len(live_tools),
         knowledge_used=knowledge_used,
+        change_intelligence_used=change_intelligence_used,
         corroborated=corroborated,
         reasons=reasons,
     )
