@@ -20,6 +20,8 @@ if version_ge "${GO_VERSION}" "1.27.0"; then
   (cd "${ROOT_DIR}/services/k8s-mcp-server" && GOWORK=off go test ./...)
   echo "==> testing GitHub MCP server"
   (cd "${ROOT_DIR}/services/github-mcp-server" && GOWORK=off go test ./...)
+  echo "==> testing Phase 8 Incident API"
+  (cd "${ROOT_DIR}/services/incident-api" && GOWORK=off go test ./...)
 else
   echo "Go ${GO_VERSION} detected; skipping dependency-aware Go tests that require the project's Go 1.27.1 toolchain."
 fi
@@ -40,7 +42,7 @@ if [[ -n "${phase6_diff}" ]]; then
   exit 1
 fi
 
-echo "==> Phase 3-6 Python syntax"
+echo "==> Phase 3-8 Python syntax"
 python3 -m compileall -q "${ROOT_DIR}/services/agent/src" "${ROOT_DIR}/services/agent/tests"
 
 echo "==> Phase 4 SQL files"
@@ -80,3 +82,19 @@ if grep -q 'verbs:.*delete' "${ROOT_DIR}/infra/kubernetes/opspilot/k8s-mcp-serve
 fi
 
 echo "Phase 7 remediation source checks passed."
+
+
+echo "==> Phase 8 dashboard/API surface"
+phase8_go_diff="$(find "${ROOT_DIR}/services/incident-api" -name '*.go' -print0 | xargs -0 gofmt -d)"
+if [[ -n "${phase8_go_diff}" ]]; then
+  printf '%s\n' "${phase8_go_diff}"
+  echo "Phase 8 Incident API Go source is not gofmt-clean." >&2
+  exit 1
+fi
+test -s "${ROOT_DIR}/apps/dashboard/src/App.tsx"
+test -s "${ROOT_DIR}/apps/dashboard/src/components/ApprovalPanel.tsx"
+test -s "${ROOT_DIR}/services/agent/src/opspilot_agent/remediation_jobs.py"
+grep -q 'OPSPILOT_AGENT_API_URL=http://localhost:8001' "${ROOT_DIR}/.env"
+grep -q './services/incident-api' "${ROOT_DIR}/go.work"
+
+echo "Phase 8 dashboard/API source checks passed."

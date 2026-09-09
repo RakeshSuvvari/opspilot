@@ -2,35 +2,33 @@
 
 **Agentic Kubernetes Incident Response Platform**
 
-OpsPilot combines **Go** infrastructure services with a **Python/OpenAI** agent to investigate Kubernetes incidents using live cluster evidence, PostgreSQL/pgvector RAG, deterministic evaluation, and deployment/source-change intelligence.
+OpsPilot combines **Go** infrastructure services with a **Python/OpenAI** agent to investigate Kubernetes incidents using live cluster evidence, PostgreSQL/pgvector RAG, deterministic evaluation, deployment/source-change intelligence, human-approved remediation, and a React/TypeScript operations dashboard.
 
-## Current milestone: Phase 6
+## Current milestone: Phase 8
 
 ```text
-Engineer
-   |
-   v
-OpenAI Incident Agent (Python, gpt-5.4-mini by default)
-   |
-   +------------------+----------------------+--------------------+
-   |                  |                      |                    |
-   | MCP              | MCP                  | function tool      |
-   v                  v                      v                    |
-Kubernetes MCP     GitHub MCP            search_knowledge         |
-Server (Go)        Server (Go)              |                    |
-   |                  |                      v                    |
-   v                  v                PostgreSQL + pgvector      |
-Kubernetes API     GitHub commits/PRs       |                    |
-   |                  |                 Runbooks/postmortems      |
-   +------------------+----------------------+                    |
-                         |                                       |
-                         v                                       |
-                Evidence-backed RCA                              |
-                + source-change correlation                      |
-                         |                                       |
-                         v                                       |
-                Deterministic trust layer                        |
-                timeline / confidence / evals / usage            |
+Engineer / SRE
+     |
+     v
+React + TypeScript Dashboard
+     |
+     v
+Go Incident API (:8088)
+     |
+     v
+Python OpenAI Agent API (:8001)
+     |
+     +----------------+----------------+----------------+
+     |                |                |                |
+     v                v                v                v
+Kubernetes MCP     GitHub MCP      PostgreSQL/RAG   HITL approvals
+Go                 Go              pgvector         pause/resume
+     |                |                |                |
+     +----------------+----------------+----------------+
+                              |
+                              v
+                  Evidence-backed RCA + remediation
+                  timeline / scoring / evals / metrics
 ```
 
 ## Phase 6: deployment/source-change correlation
@@ -313,3 +311,52 @@ Disable the mutation surface when finished:
 ```bash
 make disable-remediation
 ```
+
+
+## Phase 8 — Go Incident API + React/TypeScript dashboard
+
+Phase 8 adds a browser-based operator surface without moving AI orchestration into the frontend. The dashboard talks only to the Go Incident API, which proxies the Python agent service. Read-only investigations return synchronously; remediation runs are represented as jobs so an OpenAI Agents SDK approval interruption can remain paused while the browser presents the exact mutating tool call.
+
+The dashboard shows:
+
+- incident status, deterministic confidence, and evidence score
+- root cause and affected resources
+- evidence and deterministic incident timeline
+- GitHub deployment/source correlation when available
+- token, latency, and tool-call metrics
+- recommended remediation and follow-up checks
+- exact human-approval cards for restart/scale/rollback
+- executed/rejected remediation action history
+
+### Local Phase 8 flow
+
+The Kubernetes MCP server must already be running with Phase 7 remediation enabled. Start these services in separate terminals:
+
+```bash
+# Terminal 1
+make port-forward-k8s-mcp
+
+# Terminal 2 (when GitHub is enabled in .env)
+make github-mcp-server-live
+
+# Terminal 3
+make agent-api-remediation
+
+# Terminal 4
+make incident-api
+
+# Terminal 5
+make dashboard
+```
+
+Open `http://localhost:5173`. The Vite development server proxies `/api` to the Go Incident API on port 8088.
+
+For the controlled rollback demo:
+
+```bash
+make incident-1-rollout
+```
+
+Choose **Remediate** in the dashboard and ask OpsPilot to diagnose the payment restart. When the agent requests `k8s_rollback_deployment`, the UI displays the exact namespace/deployment arguments and pauses until **Approve exact action** or **Reject** is selected.
+
+Phase 8 remediation jobs are intentionally stored in memory. Restarting the Python agent service clears active jobs; persistent incident/job storage is a later production-hardening step.

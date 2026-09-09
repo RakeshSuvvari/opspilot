@@ -12,6 +12,15 @@ class IncidentStatus(str, Enum):
     INSUFFICIENT_EVIDENCE = "insufficient_evidence"
 
 
+class RemediationJobStatus(str, Enum):
+    QUEUED = "queued"
+    RUNNING = "running"
+    AWAITING_APPROVAL = "awaiting_approval"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
 class Confidence(str, Enum):
     LOW = "low"
     MEDIUM = "medium"
@@ -130,3 +139,25 @@ class IncidentReport(BaseModel):
 class InvestigationRequest(BaseModel):
     query: str = Field(min_length=3)
     namespace: str | None = None
+
+
+class RemediationStartRequest(BaseModel):
+    query: str = Field(min_length=3)
+    namespace: str | None = None
+
+
+class ApprovalDecisionRequest(BaseModel):
+    approved: bool
+    call_id: str | None = None
+
+
+class RemediationJob(BaseModel):
+    job_id: str
+    status: RemediationJobStatus
+    query: str
+    namespace: str
+    created_at: str
+    updated_at: str
+    pending_approval: ApprovalRequest | None = None
+    report: IncidentReport | None = None
+    error: str | None = None

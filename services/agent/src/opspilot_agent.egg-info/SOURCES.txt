@@ -7,6 +7,7 @@ src/opspilot_agent/cli.py
 src/opspilot_agent/config.py
 src/opspilot_agent/observability.py
 src/opspilot_agent/prompts.py
+src/opspilot_agent/remediation_jobs.py
 src/opspilot_agent/runtime.py
 src/opspilot_agent/schemas.py
 src/opspilot_agent/timeline.py
@@ -38,5 +39,6 @@ tests/test_ingest.py
 tests/test_observability.py
 tests/test_prompts.py
 tests/test_rag_models.py
+tests/test_remediation_jobs.py
 tests/test_schemas.py
 tests/test_timeline.py

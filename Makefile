@@ -14,6 +14,10 @@ EVAL_CASE ?= INC-001
 EVAL_CASES ?= evals/cases/incidents.jsonl
 PHASE6_EVAL_CASES ?= evals/cases/incidents-phase6.jsonl
 GITHUB_MCP_URL ?= http://localhost:8090/mcp
+INCIDENT_API_DIR ?= services/incident-api
+DASHBOARD_DIR ?= apps/dashboard
+DASHBOARD_IMAGE ?= opspilot/dashboard:dev
+INCIDENT_API_IMAGE ?= opspilot/incident-api:dev
 
 .PHONY: help verify cluster-up cluster-down build-images load-images deploy-base reset-demo status logs-checkout logs-payment logs-inventory incident-1 incident-2 incident-3 incident-4 \
 	build-k8s-mcp-image load-k8s-mcp-image deploy-k8s-mcp restart-k8s-mcp restore-k8s-mcp-rbac status-k8s-mcp logs-k8s-mcp port-forward-k8s-mcp test-k8s-mcp smoke-k8s-mcp phase2-up \
@@ -22,7 +26,8 @@ GITHUB_MCP_URL ?= http://localhost:8090/mcp
 	eval-case eval-1 eval-2 eval-3 eval-4 phase5-check \
 	github-mcp-server github-mcp-server-live github-mcp-server-fixture smoke-github-mcp test-github-mcp github-health stamp-git-provenance deploy-base-live investigate-live investigate-1-change investigate-2-change investigate-3-change investigate-4-change \
 	eval-change-1 eval-change-2 eval-change-3 eval-change-4 phase6-check \
-	enable-remediation disable-remediation restore-k8s-remediation-rbac status-remediation phase7-up incident-1-rollout incident-2-rollout incident-3-rollout remediate remediate-1 phase7-check
+	enable-remediation disable-remediation restore-k8s-remediation-rbac status-remediation phase7-up incident-1-rollout incident-2-rollout incident-3-rollout remediate remediate-1 phase7-check \
+	agent-api-remediation incident-api test-incident-api dashboard-setup dashboard dashboard-build dashboard-check build-incident-api-image build-dashboard-image phase8-check
 
 help:
 	@echo "OpsPilot"
@@ -97,6 +102,13 @@ help:
 	@echo "  make remediate-1         - investigate, pause for exact approval, execute, then verify"
 	@echo "  make disable-remediation - disable write tools and remove writer RBAC"
 	@echo "  make phase7-check        - source checks + Phase 7 tests"
+	@echo ""
+	@echo "Phase 8 - Go Incident API + React/TypeScript dashboard"
+	@echo "  make agent-api-remediation - run agent API with approval jobs enabled on localhost:8001"
+	@echo "  make incident-api        - run Go dashboard gateway on localhost:8088"
+	@echo "  make dashboard           - run Vite React dashboard on localhost:5173"
+	@echo "  make dashboard-build     - build production dashboard assets"
+	@echo "  make phase8-check        - Python + Go API + TypeScript source checks"
 	@echo ""
 	@echo "  make cluster-down        - delete local cluster"
 
@@ -487,3 +499,42 @@ phase7-check: agent-test
 	@grep -q 'k8s_rollback_deployment' services/k8s-mcp-server/internal/tools/tools.go
 	@test -s infra/kubernetes/opspilot/k8s-mcp-server/rbac-remediation.yaml
 	@echo "Phase 7 source checks passed. Next: make phase7-up && make incident-1-rollout && make remediate-1"
+
+
+# Phase 8 - Go Incident API + React/TypeScript dashboard
+agent-api-remediation: agent-setup
+	@if [ -f .env ]; then set -a; source .env; set +a; fi; \
+		OPSPILOT_REMEDIATION_ENABLED=true \
+		$(AGENT_PYTHON) -m uvicorn opspilot_agent.api:app --host "$${OPSPILOT_AGENT_HOST:-127.0.0.1}" --port "$${OPSPILOT_AGENT_PORT:-8001}"
+
+incident-api:
+	@if [ -f .env ]; then set -a; source .env; set +a; fi; \
+		go run ./services/incident-api/cmd/server
+
+test-incident-api:
+	cd $(INCIDENT_API_DIR) && go test ./...
+
+dashboard-setup:
+	cd $(DASHBOARD_DIR) && npm install
+
+dashboard: dashboard-setup
+	cd $(DASHBOARD_DIR) && npm run dev -- --host 0.0.0.0
+
+dashboard-build: dashboard-setup
+	cd $(DASHBOARD_DIR) && npm run build
+
+dashboard-check: dashboard-setup
+	cd $(DASHBOARD_DIR) && npm run typecheck
+
+build-incident-api-image:
+	docker build -t $(INCIDENT_API_IMAGE) $(INCIDENT_API_DIR)
+
+build-dashboard-image:
+	docker build -t $(DASHBOARD_IMAGE) $(DASHBOARD_DIR)
+
+phase8-check: agent-test test-incident-api dashboard-check
+	./scripts/verify-source.sh
+	@grep -q 'OPSPILOT_AGENT_API_URL=http://localhost:8001' .env.example
+	@test -s apps/dashboard/src/App.tsx
+	@test -s services/incident-api/cmd/server/main.go
+	@echo "Phase 8 checks passed. Start agent-api, incident-api, and dashboard in separate terminals."
