@@ -73,3 +73,46 @@ func TestCORSForDashboardOrigin(t *testing.T) {
 		t.Fatalf("unexpected allow origin: %q", got)
 	}
 }
+
+func TestInvestigationHistoryProxyPreservesQuery(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/investigations" {
+			t.Fatalf("unexpected upstream path: %s", r.URL.Path)
+		}
+		if got := r.URL.Query().Get("limit"); got != "12" {
+			t.Fatalf("expected limit query to be preserved, got %q", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[]`))
+	}))
+	defer upstream.Close()
+
+	s := New(config.Config{AgentAPIURL: upstream.URL, DashboardOrigin: "http://localhost:5173", RequestTimeout: time.Second})
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/investigations?limit=12", nil)
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+}
+
+func TestInvestigationHistoryDetailProxy(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/investigations/inv-123" {
+			t.Fatalf("unexpected upstream path: %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"investigation_id":"inv-123"}`))
+	}))
+	defer upstream.Close()
+
+	s := New(config.Config{AgentAPIURL: upstream.URL, DashboardOrigin: "http://localhost:5173", RequestTimeout: time.Second})
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/investigations/inv-123", nil)
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+}

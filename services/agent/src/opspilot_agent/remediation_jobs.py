@@ -38,8 +38,8 @@ class _JobState:
 class RemediationJobManager:
     """Runs remediation workflows while exposing approval pauses over HTTP.
 
-    Phase 8 intentionally keeps jobs in memory. A production persistence layer can
-    replace this manager later without changing the dashboard API contract.
+    Approval wait state stays in memory, while completed remediation reports are
+    persisted by the runtime into PostgreSQL for Phase 9 incident history.
     """
 
     def __init__(self, runtime: "IncidentAgentRuntime"):
@@ -121,6 +121,7 @@ class RemediationJobManager:
                 state.query,
                 state.namespace,
                 approval_handler,
+                job_id=state.job_id,
             )
             async with self._lock:
                 state.report = report

@@ -48,3 +48,7 @@ SELECT extversion FROM pg_extension WHERE extname = 'vector';
 - USAGE/SELECT on knowledge sequences
 
 The runtime role does not need CREATE or database ownership.
+
+## Phase 9 operational history
+
+The same `opspilot` database now contains an `operations` schema for persisted investigations, tool-call metadata, and remediation actions. Re-running `make db-init` is idempotent and grants the existing runtime role access to both `knowledge` and `operations` schemas.

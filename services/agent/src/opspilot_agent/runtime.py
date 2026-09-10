@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import inspect
 import json
+import logging
 import re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -15,6 +16,7 @@ from agents.mcp import MCPServerStreamableHttp, create_static_tool_filter
 
 from .assessment import assess_evidence
 from .config import Settings
+from .history import HistoryStore
 from .observability import ToolRecord, extract_tool_records, ordered_unique_tool_names, save_run_artifact
 from .prompts import (
     REMEDIATION_INSTRUCTIONS,
@@ -56,6 +58,8 @@ EXPECTED_GITHUB_MCP_TOOLS = {
 
 ApprovalHandler = Callable[[ApprovalRequest], bool | Awaitable[bool]]
 
+logger = logging.getLogger(__name__)
+
 
 @dataclass(frozen=True)
 class _ApprovalDecision:
@@ -72,6 +76,7 @@ class IncidentAgentRuntime:
     def __init__(self, settings: Settings):
         self.settings = settings
         self._started = False
+        self.history = HistoryStore(settings.database_url) if settings.history_enabled else None
 
         common_params = {
             "url": settings.k8s_mcp_url,
@@ -247,6 +252,8 @@ class IncidentAgentRuntime:
         query: str,
         namespace: str | None,
         approval_handler: ApprovalHandler,
+        *,
+        job_id: str | None = None,
     ) -> IncidentReport:
         if not self.settings.remediation_enabled or self._remediation_agent is None:
             raise ValueError(
@@ -258,6 +265,7 @@ class IncidentAgentRuntime:
             namespace=namespace,
             remediation=True,
             approval_handler=approval_handler,
+            job_id=job_id,
         )
 
     async def _run(
@@ -266,6 +274,7 @@ class IncidentAgentRuntime:
         namespace: str | None,
         remediation: bool,
         approval_handler: ApprovalHandler | None,
+        job_id: str | None = None,
     ) -> IncidentReport:
         if not self._started:
             raise RuntimeError("IncidentAgentRuntime is not started")
@@ -299,7 +308,7 @@ class IncidentAgentRuntime:
                 "github_enabled": str(self.settings.github_enabled).lower(),
                 "remediation_enabled": str(remediation).lower(),
                 "component": "opspilot-agent",
-                "phase": "7",
+                "phase": "9",
             },
         )
 
@@ -457,6 +466,24 @@ class IncidentAgentRuntime:
                 model=self.settings.openai_model,
                 tool_records=records,
             )
+
+        if self.history is not None:
+            try:
+                await self.history.save_investigation(
+                    report,
+                    query=query,
+                    run_mode="remediate" if remediation else "investigate",
+                    tool_records=records,
+                    job_id=job_id,
+                )
+            except Exception as exc:  # Persistence must not hide a completed RCA.
+                logger.warning(
+                    "failed to persist investigation history",
+                    extra={
+                        "investigation_id": report.metrics.investigation_id,
+                        "error": str(exc),
+                    },
+                )
         return report
 
     async def __aenter__(self) -> "IncidentAgentRuntime":

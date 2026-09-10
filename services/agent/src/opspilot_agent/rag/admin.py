@@ -82,35 +82,50 @@ def _grant_runtime_access(
             sql.Identifier(runtime_role),
         )
     )
-    conn.execute(
-        sql.SQL("GRANT USAGE ON SCHEMA knowledge TO {}").format(
-            sql.Identifier(runtime_role)
+    for schema_name in ("knowledge", "operations"):
+        conn.execute(
+            sql.SQL("GRANT USAGE ON SCHEMA {} TO {}").format(
+                sql.Identifier(schema_name),
+                sql.Identifier(runtime_role),
+            )
         )
-    )
-    conn.execute(
-        sql.SQL(
-            "GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES "
-            "IN SCHEMA knowledge TO {}"
-        ).format(sql.Identifier(runtime_role))
-    )
-    conn.execute(
-        sql.SQL(
-            "GRANT USAGE, SELECT ON ALL SEQUENCES "
-            "IN SCHEMA knowledge TO {}"
-        ).format(sql.Identifier(runtime_role))
-    )
-    conn.execute(
-        sql.SQL(
-            "ALTER DEFAULT PRIVILEGES IN SCHEMA knowledge "
-            "GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO {}"
-        ).format(sql.Identifier(runtime_role))
-    )
-    conn.execute(
-        sql.SQL(
-            "ALTER DEFAULT PRIVILEGES IN SCHEMA knowledge "
-            "GRANT USAGE, SELECT ON SEQUENCES TO {}"
-        ).format(sql.Identifier(runtime_role))
-    )
+    for schema_name in ("knowledge", "operations"):
+        conn.execute(
+            sql.SQL(
+                "GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES "
+                "IN SCHEMA {} TO {}"
+            ).format(
+                sql.Identifier(schema_name),
+                sql.Identifier(runtime_role),
+            )
+        )
+        conn.execute(
+            sql.SQL(
+                "GRANT USAGE, SELECT ON ALL SEQUENCES "
+                "IN SCHEMA {} TO {}"
+            ).format(
+                sql.Identifier(schema_name),
+                sql.Identifier(runtime_role),
+            )
+        )
+        conn.execute(
+            sql.SQL(
+                "ALTER DEFAULT PRIVILEGES IN SCHEMA {} "
+                "GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO {}"
+            ).format(
+                sql.Identifier(schema_name),
+                sql.Identifier(runtime_role),
+            )
+        )
+        conn.execute(
+            sql.SQL(
+                "ALTER DEFAULT PRIVILEGES IN SCHEMA {} "
+                "GRANT USAGE, SELECT ON SEQUENCES TO {}"
+            ).format(
+                sql.Identifier(schema_name),
+                sql.Identifier(runtime_role),
+            )
+        )
 
 
 def apply_schema(settings: Settings, schema_path: Path) -> None:
@@ -146,7 +161,7 @@ def apply_schema(settings: Settings, schema_path: Path) -> None:
         raise
 
     print(f"Applied schema from {schema_path} using the admin connection.")
-    print(f"Granted RAG runtime access to PostgreSQL role '{runtime_role}'.")
+    print(f"Granted OpsPilot runtime access to PostgreSQL role '{runtime_role}'.")
 
 
 def check_database(settings: Settings) -> None:
@@ -165,6 +180,9 @@ def check_database(settings: Settings) -> None:
         chunks = conn.execute(
             "SELECT COUNT(*) FROM knowledge.chunks"
         ).fetchone()[0]
+        investigations = conn.execute(
+            "SELECT COUNT(*) FROM operations.investigations"
+        ).fetchone()[0]
 
     print(f"database: {database}")
     print(f"runtime role: {current_user}")
@@ -172,6 +190,7 @@ def check_database(settings: Settings) -> None:
     print(f"pgvector: {vector[0] if vector else 'NOT INSTALLED'}")
     print(f"documents: {docs}")
     print(f"chunks: {chunks}")
+    print(f"investigations: {investigations}")
 
 
 def main() -> None:

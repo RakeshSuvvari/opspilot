@@ -16,6 +16,7 @@ export function SystemBar({ system }: { system: SystemInfo | null }) {
         {system?.agent.model && <span className="pill">{system.agent.model}</span>}
         {system?.agent.rag_enabled && <span className="pill">RAG</span>}
         {system?.agent.github_enabled && <span className="pill">GitHub</span>}
+        {system?.agent.history_available && <span className="pill">History</span>}
         {system?.agent.remediation_enabled && <span className="pill pill-action">HITL remediation</span>}
       </div>
     </div>

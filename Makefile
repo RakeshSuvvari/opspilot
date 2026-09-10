@@ -27,7 +27,8 @@ INCIDENT_API_IMAGE ?= opspilot/incident-api:dev
 	github-mcp-server github-mcp-server-live github-mcp-server-fixture smoke-github-mcp test-github-mcp github-health stamp-git-provenance deploy-base-live investigate-live investigate-1-change investigate-2-change investigate-3-change investigate-4-change \
 	eval-change-1 eval-change-2 eval-change-3 eval-change-4 phase6-check \
 	enable-remediation disable-remediation restore-k8s-remediation-rbac status-remediation phase7-up incident-1-rollout incident-2-rollout incident-3-rollout remediate remediate-1 phase7-check \
-	agent-api-remediation incident-api test-incident-api dashboard-setup dashboard dashboard-build dashboard-check build-incident-api-image build-dashboard-image phase8-check
+	agent-api-remediation incident-api test-incident-api dashboard-setup dashboard dashboard-build dashboard-check build-incident-api-image build-dashboard-image phase8-check \
+	history-list phase9-check
 
 help:
 	@echo "OpsPilot"
@@ -109,6 +110,11 @@ help:
 	@echo "  make dashboard           - run Vite React dashboard on localhost:5173"
 	@echo "  make dashboard-build     - build production dashboard assets"
 	@echo "  make phase8-check        - Python + Go API + TypeScript source checks"
+	@echo ""
+	@echo "Phase 9 - PostgreSQL incident history + hardening"
+	@echo "  make db-init             - rerun once to create operations history tables/grants"
+	@echo "  make history-list        - list persisted investigations through the Go Incident API"
+	@echo "  make phase9-check        - Phase 9 Python/Go/dashboard checks"
 	@echo ""
 	@echo "  make cluster-down        - delete local cluster"
 
@@ -534,7 +540,21 @@ build-dashboard-image:
 
 phase8-check: agent-test test-incident-api dashboard-check
 	./scripts/verify-source.sh
-	@grep -q 'OPSPILOT_AGENT_API_URL=http://localhost:8001' .env.example
+	@grep -q 'OPSPILOT_AGENT_API_URL=http://localhost:8001' .env
 	@test -s apps/dashboard/src/App.tsx
 	@test -s services/incident-api/cmd/server/main.go
 	@echo "Phase 8 checks passed. Start agent-api, incident-api, and dashboard in separate terminals."
+
+
+# Phase 9 - PostgreSQL incident history + hardening
+history-list:
+	curl -s "http://localhost:8088/api/v1/investigations?limit=20"
+	@echo
+
+phase9-check: agent-test test-incident-api dashboard-check
+	./scripts/verify-source.sh
+	@grep -q 'OPSPILOT_HISTORY_ENABLED=true' .env
+	@grep -q 'CREATE SCHEMA IF NOT EXISTS operations' infra/postgres/01-schema.sql
+	@test -s services/agent/src/opspilot_agent/history.py
+	@test -s apps/dashboard/src/components/HistoryPanel.tsx
+	@echo "Phase 9 checks passed. Rerun make db-init, then start the Phase 8 services and open Incident history."

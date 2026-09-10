@@ -14,7 +14,7 @@ import (
 	"opspilot/services/incident-api/internal/config"
 )
 
-const version = "0.8.0"
+const version = "0.9.0"
 
 type Server struct {
 	cfg    config.Config
@@ -41,6 +41,8 @@ func (s *Server) Handler() http.Handler {
 func (s *Server) routes() {
 	s.mux.HandleFunc("GET /healthz", s.healthz)
 	s.mux.HandleFunc("GET /api/v1/system", s.system)
+	s.mux.HandleFunc("GET /api/v1/investigations", s.proxyFixed("/v1/investigations"))
+	s.mux.HandleFunc("GET /api/v1/investigations/{investigationID}", s.proxyInvestigation)
 	s.mux.HandleFunc("POST /api/v1/investigations", s.proxyFixed("/v1/investigations"))
 	s.mux.HandleFunc("POST /api/v1/remediations", s.proxyFixed("/v1/remediations"))
 	s.mux.HandleFunc("GET /api/v1/remediations/{jobID}", s.proxyRemediation)
@@ -80,6 +82,15 @@ func (s *Server) proxyFixed(upstreamPath string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		s.proxy(w, r, upstreamPath)
 	}
+}
+
+func (s *Server) proxyInvestigation(w http.ResponseWriter, r *http.Request) {
+	investigationID := strings.TrimSpace(r.PathValue("investigationID"))
+	if investigationID == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing investigation id"})
+		return
+	}
+	s.proxy(w, r, "/v1/investigations/"+investigationID)
 }
 
 func (s *Server) proxyRemediation(w http.ResponseWriter, r *http.Request) {
@@ -125,6 +136,7 @@ func (s *Server) proxy(w http.ResponseWriter, r *http.Request, upstreamPath stri
 	if contentType := r.Header.Get("Content-Type"); contentType != "" {
 		req.Header.Set("Content-Type", contentType)
 	}
+	req.URL.RawQuery = r.URL.RawQuery
 	req.Header.Set("Accept", "application/json")
 
 	resp, err := s.client.Do(req)

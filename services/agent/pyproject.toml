@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "opspilot-agent"
-version = "0.8.0"
+version = "0.9.0"
 description = "OpsPilot agentic Kubernetes incident investigator with RAG, MCP change intelligence, human-approved remediation, evaluation, and observability"
 requires-python = ">=3.11"
 dependencies = [

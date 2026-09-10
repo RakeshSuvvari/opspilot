@@ -1,4 +1,4 @@
-import type { IncidentReport, RemediationJob, SystemInfo } from '../types'
+import type { IncidentReport, InvestigationHistoryDetail, InvestigationHistoryItem, RemediationJob, SystemInfo } from '../types'
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api/v1'
 
@@ -27,6 +27,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   system: () => request<SystemInfo>('/system'),
+  history: (limit = 25) => request<InvestigationHistoryItem[]>(`/investigations?limit=${limit}`),
+  historyDetail: (investigationId: string) =>
+    request<InvestigationHistoryDetail>(`/investigations/${encodeURIComponent(investigationId)}`),
   investigate: (query: string, namespace: string) =>
     request<IncidentReport>('/investigations', {
       method: 'POST',

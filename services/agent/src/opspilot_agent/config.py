@@ -61,6 +61,7 @@ class Settings:
     save_run_artifacts: bool
     run_artifact_dir: str
     timeline_max_events: int
+    history_enabled: bool
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -92,6 +93,7 @@ class Settings:
             save_run_artifacts=_env_bool("OPSPILOT_SAVE_RUN_ARTIFACTS", True),
             run_artifact_dir=os.getenv("OPSPILOT_RUN_ARTIFACT_DIR", ".opspilot/runs").strip(),
             timeline_max_events=_env_int("OPSPILOT_TIMELINE_MAX_EVENTS", 20),
+            history_enabled=_env_bool("OPSPILOT_HISTORY_ENABLED", True),
         )
         settings.validate()
         return settings

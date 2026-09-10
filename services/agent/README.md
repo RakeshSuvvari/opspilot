@@ -9,3 +9,7 @@ Default model configuration:
 ```bash
 OPENAI_MODEL=gpt-5.4-mini
 ```
+
+## Phase 9 persistence
+
+With `OPSPILOT_HISTORY_ENABLED=true`, completed investigations and remediation reports are persisted to PostgreSQL under the `operations` schema. Persistence failures are non-fatal: the RCA is still returned and local run artifacts remain available.

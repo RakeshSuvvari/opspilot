@@ -4,7 +4,7 @@
 
 OpsPilot combines **Go** infrastructure services with a **Python/OpenAI** agent to investigate Kubernetes incidents using live cluster evidence, PostgreSQL/pgvector RAG, deterministic evaluation, deployment/source-change intelligence, human-approved remediation, and a React/TypeScript operations dashboard.
 
-## Current milestone: Phase 8
+## Current milestone: Phase 9
 
 ```text
 Engineer / SRE
@@ -29,6 +29,34 @@ Go                 Go              pgvector         pause/resume
                               v
                   Evidence-backed RCA + remediation
                   timeline / scoring / evals / metrics
+```
+
+
+## Phase 9: persisted incident history
+
+Phase 9 stores completed investigations in the existing PostgreSQL `opspilot` database. The `operations` schema keeps searchable investigation metadata plus normalized tool-call and remediation-action records, while the full structured report is stored as JSONB for exact replay in the dashboard.
+
+```text
+operations.investigations
+operations.tool_calls
+operations.remediation_actions
+```
+
+Run the idempotent database migration once after updating:
+
+```bash
+make db-init
+make db-check
+```
+
+Then start the Phase 8 services as usual. The React/TypeScript dashboard now has an **Incident history** view. Completed CLI, API, evaluation, and remediation runs are persisted automatically when `OPSPILOT_HISTORY_ENABLED=true`.
+
+Persistence is intentionally non-fatal: if PostgreSQL history is temporarily unavailable, OpsPilot still returns the completed RCA and keeps the local `.opspilot/runs` artifact fallback. The dashboard reports history as unavailable instead of breaking live investigation.
+
+With the Go Incident API running, history can also be checked directly:
+
+```bash
+make history-list
 ```
 
 ## Phase 6: deployment/source-change correlation

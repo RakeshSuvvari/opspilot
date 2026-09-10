@@ -161,3 +161,24 @@ class RemediationJob(BaseModel):
     pending_approval: ApprovalRequest | None = None
     report: IncidentReport | None = None
     error: str | None = None
+
+
+class InvestigationHistoryItem(BaseModel):
+    investigation_id: str
+    job_id: str | None = None
+    query: str
+    namespace: str
+    run_mode: str
+    status: IncidentStatus
+    confidence: Confidence
+    summary: str
+    root_cause: str
+    evidence_score: int = Field(ge=0, le=100)
+    completed_at: str
+    elapsed_ms: int = Field(ge=0)
+    total_tokens: int = Field(ge=0)
+    tool_call_count: int = Field(ge=0)
+
+
+class InvestigationHistoryDetail(InvestigationHistoryItem):
+    report: IncidentReport

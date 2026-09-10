@@ -25,6 +25,7 @@ class SettingsTests(unittest.TestCase):
         self.assertTrue(settings.save_run_artifacts)
         self.assertEqual(settings.run_artifact_dir, ".opspilot/runs")
         self.assertEqual(settings.timeline_max_events, 20)
+        self.assertTrue(settings.history_enabled)
 
     def test_invalid_mcp_url(self):
         with patch.dict(

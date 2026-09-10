@@ -110,6 +110,29 @@ export interface SystemInfo {
     rag_enabled?: boolean
     github_enabled?: boolean
     remediation_enabled?: boolean
+    history_enabled?: boolean
+    history_available?: boolean
   }
   tools: string[]
+}
+
+export interface InvestigationHistoryItem {
+  investigation_id: string
+  job_id?: string | null
+  query: string
+  namespace: string
+  run_mode: 'investigate' | 'remediate'
+  status: IncidentStatus
+  confidence: Confidence
+  summary: string
+  root_cause: string
+  evidence_score: number
+  completed_at: string
+  elapsed_ms: number
+  total_tokens: number
+  tool_call_count: number
+}
+
+export interface InvestigationHistoryDetail extends InvestigationHistoryItem {
+  report: IncidentReport
 }

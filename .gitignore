@@ -15,3 +15,5 @@ services/agent/.venv/
 
 # Local OpsPilot run/evaluation artifacts
 .opspilot/
+*.egg-info/
+node_modules/

@@ -11,6 +11,8 @@ from .runtime import IncidentAgentRuntime
 from .schemas import (
     ApprovalDecisionRequest,
     IncidentReport,
+    InvestigationHistoryDetail,
+    InvestigationHistoryItem,
     InvestigationRequest,
     RemediationJob,
     RemediationStartRequest,
@@ -43,6 +45,10 @@ app = FastAPI(
 @app.get("/healthz")
 async def healthz(request: Request) -> dict[str, object]:
     settings: Settings = request.app.state.settings
+    runtime: IncidentAgentRuntime = request.app.state.runtime
+    history_available = False
+    if runtime.history is not None:
+        history_available = await runtime.history.ping()
     return {
         "status": "ok",
         "version": __version__,
@@ -51,9 +57,11 @@ async def healthz(request: Request) -> dict[str, object]:
         "rag_enabled": settings.rag_enabled,
         "embedding_model": settings.embedding_model,
         "github_enabled": settings.github_enabled,
-        "phase": 8,
+        "phase": 9,
         "save_run_artifacts": settings.save_run_artifacts,
         "remediation_enabled": settings.remediation_enabled,
+        "history_enabled": settings.history_enabled,
+        "history_available": history_available,
     }
 
 
@@ -65,6 +73,48 @@ async def tools(request: Request) -> dict[str, object]:
             include_remediation=request.app.state.settings.remediation_enabled
         )
     }
+
+
+
+
+@app.get("/v1/investigations", response_model=list[InvestigationHistoryItem])
+async def investigation_history(
+    request: Request,
+    limit: int = 25,
+) -> list[InvestigationHistoryItem]:
+    runtime: IncidentAgentRuntime = request.app.state.runtime
+    if runtime.history is None:
+        return []
+    try:
+        return await runtime.history.list_investigations(limit=limit)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Incident history unavailable: {type(exc).__name__}",
+        ) from exc
+
+
+@app.get(
+    "/v1/investigations/{investigation_id}",
+    response_model=InvestigationHistoryDetail,
+)
+async def investigation_history_detail(
+    investigation_id: str,
+    request: Request,
+) -> InvestigationHistoryDetail:
+    runtime: IncidentAgentRuntime = request.app.state.runtime
+    if runtime.history is None:
+        raise HTTPException(status_code=404, detail="incident history is disabled")
+    try:
+        item = await runtime.history.get_investigation(investigation_id)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Incident history unavailable: {type(exc).__name__}",
+        ) from exc
+    if item is None:
+        raise HTTPException(status_code=404, detail="investigation not found")
+    return item
 
 
 @app.post("/v1/investigations", response_model=IncidentReport)

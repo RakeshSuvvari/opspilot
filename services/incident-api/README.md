@@ -16,3 +16,12 @@ Defaults:
 - listen: `:8088`
 - Python agent API: `http://localhost:8001`
 - dashboard origin: `http://localhost:5173`
+
+## Phase 9 history routes
+
+The Go gateway proxies persisted incident history from the agent service:
+
+- `GET /api/v1/investigations?limit=25`
+- `GET /api/v1/investigations/{investigation_id}`
+
+The dashboard continues to use the Go API as its only backend.

@@ -42,7 +42,7 @@ if [[ -n "${phase6_diff}" ]]; then
   exit 1
 fi
 
-echo "==> Phase 3-8 Python syntax"
+echo "==> Phase 3-9 Python syntax"
 python3 -m compileall -q "${ROOT_DIR}/services/agent/src" "${ROOT_DIR}/services/agent/tests"
 
 echo "==> Phase 4 SQL files"
@@ -98,3 +98,14 @@ grep -q 'OPSPILOT_AGENT_API_URL=http://localhost:8001' "${ROOT_DIR}/.env"
 grep -q './services/incident-api' "${ROOT_DIR}/go.work"
 
 echo "Phase 8 dashboard/API source checks passed."
+
+
+echo "==> Phase 9 persisted incident history"
+grep -q 'CREATE SCHEMA IF NOT EXISTS operations' "${ROOT_DIR}/infra/postgres/01-schema.sql"
+grep -q 'CREATE TABLE IF NOT EXISTS operations.investigations' "${ROOT_DIR}/infra/postgres/01-schema.sql"
+test -s "${ROOT_DIR}/services/agent/src/opspilot_agent/history.py"
+test -s "${ROOT_DIR}/apps/dashboard/src/components/HistoryPanel.tsx"
+grep -q 'OPSPILOT_HISTORY_ENABLED=true' "${ROOT_DIR}/.env"
+grep -q 'GET /api/v1/investigations' "${ROOT_DIR}/services/incident-api/internal/api/server.go"
+
+echo "Phase 9 persistence source checks passed."
