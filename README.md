@@ -1,7 +1,5 @@
 # OpsPilot
 
-[![CI](https://github.com/RakeshSuvvari/opspilot/actions/workflows/ci.yml/badge.svg)](https://github.com/RakeshSuvvari/opspilot/actions/workflows/ci.yml)
-
 **Agentic Kubernetes Incident Response Platform**
 
 OpsPilot is a production-style incident-response platform that combines **live Kubernetes diagnostics**, **OpenAI agentic reasoning**, **MCP tool servers**, **PostgreSQL/pgvector RAG**, **GitHub deployment-change intelligence**, and **human-approved remediation** behind a **Go API + React/TypeScript dashboard**.
