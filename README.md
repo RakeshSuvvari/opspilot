@@ -286,4 +286,3 @@ benchmarks/                        benchmark scenarios/results
 
 **Complete.** The project now covers investigation, evidence-backed RCA, RAG, deployment-change intelligence, HITL remediation, persistence, a TypeScript/React dashboard, deterministic evaluation, measured benchmarks, and CI validation.
 
-See [`docs/resume-entry.md`](docs/resume-entry.md) for the final resume-ready project entry.
