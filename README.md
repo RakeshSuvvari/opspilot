@@ -170,7 +170,7 @@ make cluster-up
 make build-images
 make load-images
 make deploy-base
-make phase2-up
+make phase7-up
 make agent-setup
 make db-create
 make db-init
