@@ -172,6 +172,7 @@ reset-demo:
 	-kubectl delete namespace $(NAMESPACE) --ignore-not-found=true --wait=true
 	kubectl apply -k demo/kubernetes/base
 	@$(MAKE) --no-print-directory restore-k8s-mcp-rbac
+	@$(MAKE) --no-print-directory restore-remediation-rbac
 
 status:
 	@echo "=== Pods ==="

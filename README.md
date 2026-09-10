@@ -39,9 +39,11 @@ flowchart LR
 
 The React/TypeScript UI supports live investigations, remediation jobs, exact HITL approval, structured evidence/timeline views, source-change correlation, run metrics, and persisted incident history.
 
-![OpsPilot dashboard preview](docs/screenshots/dashboard-overview.svg)
+![OpsPilot dashboard preview](docs/screenshots/dashboard-overview.png)
 
-![OpsPilot human approval preview](docs/screenshots/hitl-approval.svg)
+![OpsPilot human approval preview](docs/screenshots/hitl-approval.png)
+
+![OpsPilot remedy success preview](docs/screenshots/remedy-success.png)
 
 
 ## What OpsPilot implements
@@ -207,7 +209,13 @@ For a rollback-capable HITL demo:
 make incident-1-rollout
 ```
 
-Then select **Remediate** in the dashboard. OpsPilot should diagnose the missing `DATABASE_URL`, request `k8s_rollback_deployment`, pause for approval, execute only if approved, and verify recovery.
+Then select **Remediate** in the dashboard. and enter something like:
+```
+Diagnose why payment is repeatedly restarting. If this is a newly
+rolled out deployment regression, identify the safest corrective
+action and verify recovery after remediation.
+```
+OpsPilot should diagnose the missing `DATABASE_URL`, request `k8s_rollback_deployment`, pause for approval, execute only if approved, and verify recovery.
 
 ## Evaluation
 
@@ -254,6 +262,25 @@ or validate Kubernetes manifests alone with:
 
 ```bash
 make validate-manifests
+```
+
+Then after any benchmark or incident testing, to return the servives to normal/healthy. Simply run:
+```bash
+make reset-demo
+make disable-remediation
+```
+This makes the system to revert to the healthy demo environment while removing the write RBAC and disabling the Kubernetes MCP write surface.
+
+and verify:
+```bash
+kubectl get pods -n opspilot-demo
+```
+
+You should eventually see all three services healthy:
+```text
+checkout     1/1   Running
+inventory    1/1   Running
+payment      1/1   Running
 ```
 
 ## Repository layout
