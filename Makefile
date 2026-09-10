@@ -172,7 +172,7 @@ reset-demo:
 	-kubectl delete namespace $(NAMESPACE) --ignore-not-found=true --wait=true
 	kubectl apply -k demo/kubernetes/base
 	@$(MAKE) --no-print-directory restore-k8s-mcp-rbac
-	@$(MAKE) --no-print-directory restore-remediation-rbac
+	@$(MAKE) --no-print-directory restore-k8s-remediation-rbac
 
 status:
 	@echo "=== Pods ==="
@@ -698,6 +698,7 @@ validate-manifests:
 phase11-check: phase10-check validate-manifests
 	@test -s .github/workflows/ci.yml
 	@test -s benchmarks/results/final-2026-09-10.md
-	@test -s docs/screenshots/dashboard-overview.svg
-	@test -s docs/screenshots/hitl-approval.svg
+	@test -s docs/screenshots/dashboard-overview.png
+	@test -s docs/screenshots/hitl-approval.png
+	@test -s docs/screenshots/remedy-success.png
 	@echo "Phase 11 checks passed. OpsPilot final project validation is complete."
