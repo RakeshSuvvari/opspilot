@@ -6,18 +6,33 @@ from opspilot_agent.schemas import ApprovalRequest, RemediationJobStatus
 
 
 class _FakeRuntime:
-    async def remediate(self, query, namespace, approval_handler):
+    async def remediate(
+        self,
+        query,
+        namespace,
+        approval_handler,
+        *,
+        job_id=None,
+    ):
+        if job_id is None:
+            raise AssertionError("expected remediation job_id")
+
         approved = await approval_handler(
             ApprovalRequest(
                 call_id="call-1",
                 tool_name="k8s_rollback_deployment",
-                arguments={"namespace": namespace, "deployment_name": "payment"},
+                arguments={
+                    "namespace": namespace,
+                    "deployment_name": "payment",
+                },
                 risk="high",
                 reason="test approval",
             )
         )
+
         if not approved:
             raise RuntimeError("approval rejected in fake runtime")
+
         from opspilot_agent.schemas import IncidentReport
 
         return IncidentReport.model_validate(
