@@ -124,3 +124,21 @@ for incident in 005-image-pull 006-missing-secret 007-bad-inventory-dns 008-brok
 done
 
 echo "Phase 10 benchmark source checks passed."
+
+
+echo "==> Phase 11 CI/CD and project finish"
+test -s "${ROOT_DIR}/.github/workflows/ci.yml"
+test -x "${ROOT_DIR}/scripts/validate-manifests.sh"
+test -s "${ROOT_DIR}/benchmarks/results/final-2026-09-10.md"
+test -s "${ROOT_DIR}/docs/screenshots/dashboard-overview.svg"
+test -s "${ROOT_DIR}/docs/screenshots/hitl-approval.svg"
+grep -q 'actions/setup-go@v7' "${ROOT_DIR}/.github/workflows/ci.yml"
+grep -q 'actions/setup-python@v7' "${ROOT_DIR}/.github/workflows/ci.yml"
+grep -q 'actions/setup-node@v7' "${ROOT_DIR}/.github/workflows/ci.yml"
+grep -q 'npm run typecheck' "${ROOT_DIR}/.github/workflows/ci.yml"
+grep -q 'npm run build' "${ROOT_DIR}/.github/workflows/ci.yml"
+grep -q 'validate-manifests.sh' "${ROOT_DIR}/.github/workflows/ci.yml"
+grep -q '91.11%' "${ROOT_DIR}/README.md"
+grep -q '87.50%' "${ROOT_DIR}/README.md"
+
+echo "Phase 11 CI/documentation source checks passed."

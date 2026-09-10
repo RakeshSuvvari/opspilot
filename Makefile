@@ -32,7 +32,7 @@ INCIDENT_API_IMAGE ?= opspilot/incident-api:dev
 	eval-change-1 eval-change-2 eval-change-3 eval-change-4 phase6-check \
 	enable-remediation disable-remediation restore-k8s-remediation-rbac status-remediation phase7-up incident-1-rollout incident-2-rollout incident-3-rollout remediate remediate-1 phase7-check \
 	agent-api-remediation incident-api test-incident-api dashboard-setup dashboard dashboard-build dashboard-check build-incident-api-image build-dashboard-image phase8-check \
-	history-list phase9-check incident-5 incident-6 incident-7 incident-8 incident-9 incident-10 eval-5 eval-6 eval-7 eval-8 eval-9 eval-10 benchmark benchmark-no-rag benchmark-change benchmark-case phase10-check
+	history-list phase9-check incident-5 incident-6 incident-7 incident-8 incident-9 incident-10 eval-5 eval-6 eval-7 eval-8 eval-9 eval-10 benchmark benchmark-no-rag benchmark-change benchmark-case phase10-check validate-manifests phase11-check
 
 help:
 	@echo "OpsPilot"
@@ -132,6 +132,10 @@ help:
 	@echo "  make benchmark-change    - 4-case GitHub fixture correlation benchmark"
 	@echo "  make benchmark-case BENCHMARK_CASE=INC-005 - run one benchmark case"
 	@echo "  make phase10-check       - source/unit/dashboard checks for final benchmark suite"
+	@echo ""
+	@echo "Phase 11 - CI/CD + project finish"
+	@echo "  make validate-manifests  - render and client-validate all Kustomize targets"
+	@echo "  make phase11-check       - final Python/Go/dashboard/source/manifest checks"
 	@echo ""
 	@echo "  make cluster-down        - delete local cluster"
 
@@ -684,3 +688,15 @@ phase10-check: agent-test test-incident-api dashboard-check
 	@test -s services/agent/src/opspilot_agent/benchmarks/cli.py
 	@grep -q 'opspilot-benchmark' services/agent/pyproject.toml
 	@echo "Phase 10 checks passed. Re-run make rag-ingest for the new runbooks, then run make benchmark."
+
+
+# Phase 11 - CI/CD + final project validation
+validate-manifests:
+	./scripts/validate-manifests.sh
+
+phase11-check: phase10-check validate-manifests
+	@test -s .github/workflows/ci.yml
+	@test -s benchmarks/results/final-2026-09-10.md
+	@test -s docs/screenshots/dashboard-overview.svg
+	@test -s docs/screenshots/hitl-approval.svg
+	@echo "Phase 11 checks passed. OpsPilot final project validation is complete."

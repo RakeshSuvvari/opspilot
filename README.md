@@ -1,434 +1,291 @@
 # OpsPilot
 
+[![CI](https://github.com/RakeshSuvvari/opspilot/actions/workflows/ci.yml/badge.svg)](https://github.com/RakeshSuvvari/opspilot/actions/workflows/ci.yml)
+
 **Agentic Kubernetes Incident Response Platform**
 
-OpsPilot combines **Go** infrastructure services with a **Python/OpenAI** agent to investigate Kubernetes incidents using live cluster evidence, PostgreSQL/pgvector RAG, deterministic evaluation, deployment/source-change intelligence, human-approved remediation, and a React/TypeScript operations dashboard.
+OpsPilot is a production-style incident-response platform that combines **live Kubernetes diagnostics**, **OpenAI agentic reasoning**, **MCP tool servers**, **PostgreSQL/pgvector RAG**, **GitHub deployment-change intelligence**, and **human-approved remediation** behind a **Go API + React/TypeScript dashboard**.
 
-## Current milestone: Phase 9
+The project is intentionally evidence-first: RAG and source history can support a diagnosis, but high-confidence conclusions require live Kubernetes evidence. Mutating actions are disabled by default and require narrow RBAC plus exact human approval.
+
+## Architecture
+
+```mermaid
+flowchart LR
+    U[SRE / Engineer] --> UI[React + TypeScript Dashboard]
+    UI --> API[Go Incident API]
+    API --> AG[Python OpenAI Agent API]
+    AG --> OAI[OpenAI Agents SDK / Responses API]
+    AG --> KMCP[Go Kubernetes MCP]
+    AG --> GMCP[Go GitHub MCP]
+    AG --> RAG[PostgreSQL + pgvector RAG]
+    AG --> HIST[PostgreSQL Incident History]
+    KMCP --> K8S[Kubernetes API]
+    GMCP --> GH[GitHub REST API / Fixtures]
+    AG --> HITL{Human approval?}
+    HITL -->|approve exact call| KMCP
+    HITL -->|reject| AG
+    KMCP --> VERIFY[Post-action verification]
+    VERIFY --> AG
+```
+
+### Request flow
+
+1. The agent inspects pods, deployments, logs, and events through the read-only Kubernetes MCP server.
+2. It retrieves relevant runbooks/postmortems from pgvector and, when enabled, correlates deployed revisions with GitHub commits/PRs.
+3. OpsPilot builds a structured RCA, deterministic evidence score, timeline, tool record, and run metrics.
+4. In remediation mode, restart/scale/rollback calls pause for exact human approval before the Go MCP server can mutate Kubernetes.
+5. Completed investigations and remediation history are persisted to PostgreSQL and can be reopened in the dashboard.
+
+## Dashboard
+
+The React/TypeScript UI supports live investigations, remediation jobs, exact HITL approval, structured evidence/timeline views, source-change correlation, run metrics, and persisted incident history.
+
+![OpsPilot dashboard preview](docs/screenshots/dashboard-overview.svg)
+
+![OpsPilot human approval preview](docs/screenshots/hitl-approval.svg)
+
+
+## What OpsPilot implements
+
+- **Kubernetes MCP (Go):** pods, logs, events, deployments, restart, scale, and rollback.
+- **GitHub MCP (Go):** commits, comparisons, pull-request correlation, fixture and live modes.
+- **Agent orchestration (Python):** OpenAI Agents SDK, structured RCA, deterministic assessment/timeline, HITL pause/resume.
+- **RAG:** explicit Markdown → embeddings → PostgreSQL/pgvector pipeline; no LangChain dependency.
+- **Safety:** read-only by default, separate remediation RBAC, write-tool feature flag, per-call approval, post-action verification.
+- **Incident API (Go):** single gateway used by the frontend for investigations, history, and remediation jobs.
+- **Dashboard (React + TypeScript):** live RCA, incident history, evidence, metrics, and approvals.
+- **Persistence:** normalized `operations` schema plus full JSONB report replay.
+- **Evaluation:** deterministic scoring and controlled Kubernetes incident injection.
+- **CI:** Go tests, Python tests, TypeScript typecheck/build, and Kustomize manifest validation.
+
+## Measured benchmark results
+
+The primary benchmark uses **10 controlled scenarios × 3 repeats = 30 investigations** with `gpt-5.4-mini` on a local `kind` cluster. The 10 scenarios include nine failures plus a healthy control. A case passes at an evaluation score of at least 80/100.
+
+| Metric | Final 30-run result |
+|---|---:|
+| Pass rate | **83.33%** |
+| Root-cause accuracy | **91.11%** |
+| Status accuracy | **76.67%** |
+| Required-tool coverage | **96.67%** |
+| Remediation recommendation coverage | **100.00%** |
+| Average evaluation score | **88.36 / 100** |
+| Median investigation latency | **8.481 s** |
+| P95 investigation latency | **12.934 s** |
+| Average tool calls | **5.03** |
+| Total tokens | **469,576** |
+| Estimated text-token cost | **$0.4365** |
+
+A separate four-case GitHub fixture benchmark achieved **87.50% deployment-change correlation**, 90.83% required-tool coverage, and a median investigation latency of 14.764 s.
+
+### Benchmark scenarios
+
+| Case | Scenario |
+|---|---|
+| INC-001 | Missing `DATABASE_URL` / CrashLoopBackOff |
+| INC-002 | Memory limit / OOMKilled |
+| INC-003 | Broken readiness probe |
+| INC-004 | Downstream timeout |
+| INC-005 | Invalid image / ImagePullBackOff |
+| INC-006 | Missing Kubernetes Secret / CreateContainerConfigError |
+| INC-007 | Invalid downstream DNS/configuration |
+| INC-008 | Broken liveness probe |
+| INC-009 | Application/probe port mismatch |
+| INC-010 | Healthy control / false-positive check |
+
+The RAG on/off experiment was only one stochastic run per scenario. It is retained as a descriptive ablation rather than used to claim that RAG universally improves accuracy. Full recorded results and limitations are in [`benchmarks/results/final-2026-09-10.md`](benchmarks/results/final-2026-09-10.md).
+
+## Example investigation
+
+For INC-001, OpsPilot observed a newly rolled-out `payment` pod repeatedly restarting, retrieved previous container logs showing that `DATABASE_URL` was not configured, confirmed the environment variable was absent from the live Deployment template, and corroborated the failure with Kubernetes events and the payment configuration runbook.
 
 ```text
-Engineer / SRE
-     |
-     v
-React + TypeScript Dashboard
-     |
-     v
-Go Incident API (:8088)
-     |
-     v
-Python OpenAI Agent API (:8001)
-     |
-     +----------------+----------------+----------------+
-     |                |                |                |
-     v                v                v                v
-Kubernetes MCP     GitHub MCP      PostgreSQL/RAG   HITL approvals
-Go                 Go              pgvector         pause/resume
-     |                |                |                |
-     +----------------+----------------+----------------+
-                              |
-                              v
-                  Evidence-backed RCA + remediation
-                  timeline / scoring / evals / metrics
+Status:      incident
+Confidence:  high
+Root cause:  payment cannot start because DATABASE_URL is missing
+Live proof:  CrashLoopBackOff + previous logs + Deployment template + events
+Action:      rollback deployment/payment to its previous ReplicaSet revision
+Safety:      protected tool call pauses for human approval
+Verification: re-check Deployment/pods/logs after the approved rollback
 ```
 
+## Safety model
 
-## Phase 9: persisted incident history
-
-Phase 9 stores completed investigations in the existing PostgreSQL `opspilot` database. The `operations` schema keeps searchable investigation metadata plus normalized tool-call and remediation-action records, while the full structured report is stored as JSONB for exact replay in the dashboard.
+OpsPilot treats LLM output as a decision aid, not infrastructure authority.
 
 ```text
-operations.investigations
-operations.tool_calls
-operations.remediation_actions
+Default Kubernetes MCP: read-only
+        ↓
+Write tools feature flag must be enabled
+        ↓
+Separate least-privilege remediation Role/RoleBinding
+        ↓
+Only restart / scale / rollback are exposed
+        ↓
+Agents SDK pauses the exact protected tool call
+        ↓
+Human approves or rejects exact arguments
+        ↓
+Go MCP executes only after approval
+        ↓
+Agent verifies recovery with fresh live evidence
 ```
 
-Run the idempotent database migration once after updating:
+Additional guardrails:
 
-```bash
-make db-init
-make db-check
-```
+- No arbitrary `kubectl`, Secret editing, RBAC mutation, or resource deletion tools.
+- Scaling is bounded by `OPSPILOT_REMEDIATION_MAX_REPLICAS`.
+- RAG cannot establish live cluster state by itself.
+- GitHub commits are not treated as causal merely because they are recent; deployed revision provenance and the diff must correlate with live symptoms.
+- Sensitive environment values are redacted from normalized MCP output.
+- Incident-history persistence failures do not prevent the live RCA from being returned.
 
-Then start the Phase 8 services as usual. The React/TypeScript dashboard now has an **Incident history** view. Completed CLI, API, evaluation, and remediation runs are persisted automatically when `OPSPILOT_HISTORY_ENABLED=true`.
+## Stack
 
-Persistence is intentionally non-fatal: if PostgreSQL history is temporarily unavailable, OpsPilot still returns the completed RCA and keeps the local `.opspilot/runs` artifact fallback. The dashboard reports history as unavailable instead of breaking live investigation.
+**Go 1.27.1**, **Python 3.11+**, **TypeScript + React**, OpenAI Agents SDK / Responses API, MCP, Kubernetes, kind, Docker, PostgreSQL, pgvector, FastAPI, GitHub REST API, Kustomize, Vite.
 
-With the Go Incident API running, history can also be checked directly:
+## Quick start
 
-```bash
-make history-list
-```
+### Prerequisites
 
-## Phase 6: deployment/source-change correlation
-
-Kubernetes Deployments in the demo carry provenance annotations:
-
-```text
-opspilot.dev/repository
-opspilot.dev/revision
-opspilot.dev/previous-revision
-```
-
-`k8s_get_deployment` exposes those annotations. When GitHub change intelligence is enabled, the agent can correlate the exact deployed revision with the repository using these read-only GitHub MCP tools:
-
-- `github_list_recent_commits`
-- `github_get_commit`
-- `github_compare_commits`
-- `github_find_pull_requests_for_commit`
-- `github_get_pull_request`
-
-The preferred flow is:
-
-```text
-live failure
-   -> k8s_get_deployment
-   -> deployed current + previous revision
-   -> github_compare_commits(previous, current)
-   -> github_find_pull_requests_for_commit(current)
-   -> GitHub diff explains the live symptom
-   -> change-aware RCA
-```
-
-A commit is not treated as causal proof merely because it is recent. OpsPilot requires the revision to match deployment provenance and the source/config diff to explain the independently observed live Kubernetes failure.
-
-## GitHub MCP modes
-
-### Fixture mode (default for the demo)
-
-Fixture mode requires no GitHub account or token. The file:
-
-```text
-services/github-mcp-server/fixtures/demo.json
-```
-
-contains deterministic commit/PR history corresponding to INC-001 through INC-004.
-
-Start it in a separate terminal:
-
-```bash
-make github-mcp-server
-```
-
-Health check:
-
-```bash
-make github-health
-```
-
-Expected endpoint:
-
-```text
-http://localhost:8090/mcp
-```
-
-Smoke test without OpenAI usage:
-
-```bash
-make smoke-github-mcp
-```
-
-### Live GitHub mode
-
-Set in `.env`:
-
-```bash
-OPSPILOT_GITHUB_MODE=live
-OPSPILOT_GITHUB_OWNER=<owner>
-OPSPILOT_GITHUB_REPO=<repository>
-GITHUB_TOKEN=<read-only-token>
-```
-
-For private repositories, use least-privilege read permissions. OpsPilot only performs GET operations.
-
-## Run a Phase 6 investigation
-
-Terminal 1 — Kubernetes MCP:
-
-```bash
-make port-forward-k8s-mcp
-```
-
-Terminal 2 — GitHub MCP:
-
-```bash
-make github-mcp-server
-```
-
-Terminal 3 — inject and investigate:
-
-```bash
-make incident-1
-make investigate-1-change
-```
-
-A successful report should include a section similar to:
-
-```text
-Deployment/source change correlation
-- Repository: opspilot-demo/opspilot-demo-services
-- Current revision: aaaaaaaaa...
-- Previous revision: 111111111...
-- Pull request: #42
-- Change: DATABASE_URL was removed from the payment deployment.
-- Causal link: the deployed diff removed the exact configuration the live logs say is required.
-```
-
-The `Tools used` section should include both Kubernetes/RAG tools and GitHub tools such as:
-
-```text
-github_compare_commits
-github_find_pull_requests_for_commit
-github_get_pull_request
-```
-
-## Phase 6 evaluations
-
-Phase 5 evaluation cases remain available under:
-
-```text
-evals/cases/incidents.jsonl
-```
-
-Change-aware Phase 6 cases live under:
-
-```text
-evals/cases/incidents-phase6.jsonl
-```
-
-Example:
-
-```bash
-make incident-1
-make eval-change-1
-```
-
-For INC-004, generate the failing request before evaluating:
-
-```bash
-make incident-4
-kubectl port-forward -n opspilot-demo service/checkout 8081:8080
-curl -i http://localhost:8081/checkout
-make eval-change-4
-```
-
-Change-aware evaluation checks the original RCA dimensions plus source-change correlation, expected diff signals, and required GitHub tool coverage.
-
-## Main stack
-
+- Docker
+- kind
+- kubectl
 - Go 1.27.1
 - Python 3.11+
-- Kubernetes + kind
-- Docker
-- Model Context Protocol (MCP)
-- OpenAI Agents SDK / Responses API
-- `gpt-5.4-mini` default model
-- PostgreSQL + pgvector
-- OpenAI embeddings
-- FastAPI
-- GitHub REST API (live mode)
+- Node.js 22+
+- PostgreSQL with pgvector
+- OpenAI API key
 
-## Security model
-
-Both infrastructure MCP servers are read-only in Phase 6:
-
-- Kubernetes MCP: get/list/watch + pod logs; no create/update/patch/delete.
-- GitHub MCP: repository read operations only; no commits, merges, PR updates, or repository writes.
-- RAG is supporting context and cannot override live cluster evidence.
-- Tool outputs and deployment annotations should never contain access tokens.
-
-## Checks
+Copy the safe configuration template and add your local credentials:
 
 ```bash
-make phase6-check
+cp .env.example .env
 ```
 
-On your Go 1.27.1 environment you can also run:
+### Bootstrap
 
 ```bash
-make test-k8s-mcp
-make test-github-mcp
+make verify
+make cluster-up
+make build-images
+make load-images
+make deploy-base
+make phase2-up
+make agent-setup
+make db-create
+make db-init
+make rag-ingest
+make dashboard-setup
 ```
 
-## Next milestone
+### Run the platform
 
-After Phase 6, the highest-value next step is human-in-the-loop remediation: proposed rollback/restart/scale actions behind explicit approval, restricted RBAC, and post-action verification.
-
-
-### Live personal GitHub repository
-
-Phase 6 is configured for `RakeshSuvvari/opspilot` in `.env.example`. Because the repository is public, `GITHUB_TOKEN` is optional; a fine-grained read-only token is recommended for higher REST API limits.
-
-Run the real repository path with:
+Use separate terminals:
 
 ```bash
-make github-mcp-server-live
-make github-health
-make smoke-github-mcp
-```
-
-For a healthy deployment whose images were built from the current checkout, stamp real source provenance after deployment:
-
-```bash
-make deploy-base-live
-```
-
-This records `git rev-parse HEAD` and its parent as Deployment annotations. If the working tree is dirty, OpsPilot prints a warning because the built bytes may not exactly match the recorded commit.
-
-The `eval-change-*` targets intentionally continue to use fixture history until equivalent incident-producing commits/PRs exist in the real repository. Do not treat unrelated real commits as causal evidence for those injected failures.
-
-## Phase 7 — Human-approved Kubernetes remediation
-
-Phase 7 adds a deliberately narrow write path to the existing Kubernetes MCP server. Read-only
-investigations remain the default. When remediation mode is enabled, the Go MCP server additionally
-publishes:
-
-- `k8s_restart_deployment`
-- `k8s_scale_deployment`
-- `k8s_rollback_deployment`
-
-The Python agent connects to these tools with OpenAI Agents SDK approval gating. A mutating MCP call
-pauses before execution, the CLI prints the exact tool name and arguments, and the action runs only
-after the operator explicitly approves it. Rejected actions are returned to the model as rejected and
-are recorded in the final report.
-
-The Kubernetes ServiceAccount receives write privileges only through a separate Phase 7 Role. It may
-patch/update Deployments, update Deployment scale, and read ReplicaSet history. It still cannot delete
-Deployments, edit Secrets, change RBAC, or mutate arbitrary Kubernetes resources.
-
-### Local Phase 7 flow
-
-```bash
-# Rebuild the Go MCP server, enable its write tools, and apply the narrow writer Role.
-make phase7-up
-
-# Existing port-forwards must be restarted because phase7-up recreates the MCP pod.
+# Kubernetes MCP
 make port-forward-k8s-mcp
 
-# Verify patch/update/list permissions while delete stays denied.
-make status-remediation
+# GitHub MCP: fixture for deterministic demo incidents, or live for the real repository
+make github-mcp-server-fixture
 
-# Create a real Kubernetes rollout regression rather than starting directly in a bad state.
-# This preserves a healthy ReplicaSet so rollback is meaningful.
-make incident-1-rollout
-
-# In another terminal, start the human-approved agent flow.
-make remediate-1
-```
-
-When the agent requests an action, OpsPilot shows a prompt similar to:
-
-```text
-HUMAN APPROVAL REQUIRED
-Tool:   k8s_rollback_deployment
-Risk:   HIGH
-Arguments:
-{
-  "namespace": "opspilot-demo",
-  "deployment_name": "payment"
-}
-Approve this exact Kubernetes action? [y/N]:
-```
-
-After approval, the run resumes from the paused agent state, executes the Go MCP tool, and instructs
-the agent to verify the new Deployment/pod state with the read-only Kubernetes tools before returning
-the final report. The report records approval counts and deterministic `remediation_actions` so an
-action cannot be presented as executed merely because the model recommended it.
-
-Disable the mutation surface when finished:
-
-```bash
-make disable-remediation
-```
-
-
-## Phase 8 — Go Incident API + React/TypeScript dashboard
-
-Phase 8 adds a browser-based operator surface without moving AI orchestration into the frontend. The dashboard talks only to the Go Incident API, which proxies the Python agent service. Read-only investigations return synchronously; remediation runs are represented as jobs so an OpenAI Agents SDK approval interruption can remain paused while the browser presents the exact mutating tool call.
-
-The dashboard shows:
-
-- incident status, deterministic confidence, and evidence score
-- root cause and affected resources
-- evidence and deterministic incident timeline
-- GitHub deployment/source correlation when available
-- token, latency, and tool-call metrics
-- recommended remediation and follow-up checks
-- exact human-approval cards for restart/scale/rollback
-- executed/rejected remediation action history
-
-### Local Phase 8 flow
-
-The Kubernetes MCP server must already be running with Phase 7 remediation enabled. Start these services in separate terminals:
-
-```bash
-# Terminal 1
-make port-forward-k8s-mcp
-
-# Terminal 2 (when GitHub is enabled in .env)
-make github-mcp-server-live
-
-# Terminal 3
+# Python agent API with web HITL jobs
 make agent-api-remediation
 
-# Terminal 4
+# Go gateway
 make incident-api
 
-# Terminal 5
+# React/TypeScript UI
 make dashboard
 ```
 
-Open `http://localhost:5173`. The Vite development server proxies `/api` to the Go Incident API on port 8088.
+Open `http://localhost:5173`.
 
-For the controlled rollback demo:
+For a rollback-capable HITL demo:
 
 ```bash
 make incident-1-rollout
 ```
 
-Choose **Remediate** in the dashboard and ask OpsPilot to diagnose the payment restart. When the agent requests `k8s_rollback_deployment`, the UI displays the exact namespace/deployment arguments and pauses until **Approve exact action** or **Reject** is selected.
+Then select **Remediate** in the dashboard. OpsPilot should diagnose the missing `DATABASE_URL`, request `k8s_rollback_deployment`, pause for approval, execute only if approved, and verify recovery.
 
-Phase 8 remediation jobs are intentionally stored in memory. Restarting the Python agent service clears active jobs; persistent incident/job storage is a later production-hardening step.
+## Evaluation
 
-## Phase 9 — PostgreSQL incident history
-
-Completed investigations are persisted in the existing PostgreSQL `opspilot` database under the `operations` schema. The React dashboard exposes an **Incident history** view that lists prior runs and reopens the exact stored structured report. Persistence is non-fatal: if history storage is unavailable, the live RCA is still returned and local `.opspilot/runs` artifacts remain a fallback.
-
-## Phase 10 — Final evaluation and benchmarks
-
-Phase 10 expands the controlled evaluation suite to 10 scenarios: nine failure/degradation cases plus a healthy control. The benchmark runner automatically injects each scenario, restores Kubernetes MCP RBAC, generates checkout traffic when required, runs the OpenAI investigator, scores the report, and aggregates operational metrics.
-
-Primary run:
+Run the 10-case benchmark:
 
 ```bash
-# Index the new Phase 10 runbooks once.
-make rag-ingest
-
-# Keep the Kubernetes MCP port-forward running in another terminal.
 make benchmark
 ```
 
-For more stable final numbers:
+Run the final 30-investigation benchmark:
 
 ```bash
 make benchmark BENCHMARK_REPEATS=3
 ```
 
-Artifacts are written under `.opspilot/benchmarks/` as JSON, CSV, and Markdown. Reported metrics include pass rate, root-cause signal accuracy, status accuracy, required-tool coverage, remediation recommendation coverage, median/P95 latency, average tool calls, total tokens, and estimated text-token cost.
-
-Optional RAG ablation:
+Optional experiments:
 
 ```bash
 make benchmark-no-rag
-```
-
-Optional GitHub change-correlation benchmark for the existing four deterministic fixtures:
-
-```bash
-# Terminal 1
-make github-mcp-server-fixture
-
-# Terminal 2
+make github-mcp-server-fixture   # separate terminal
 make benchmark-change
 ```
 
-The standard 10-case benchmark intentionally disables GitHub so the five new scenarios are not falsely correlated with nonexistent source commits. The four Phase 6 fixture cases remain the controlled benchmark for deployment/source-change correlation.
+Artifacts are written under `.opspilot/benchmarks/` as JSON, CSV, and Markdown.
+
+## CI/CD
+
+`.github/workflows/ci.yml` runs on pushes to `main` and pull requests. It executes:
+
+```text
+Go tests across all six Go modules
+Python agent/unit tests
+TypeScript typecheck + Vite production build
+Kustomize rendering + kubectl client-side manifest validation
+```
+
+Run the closest local equivalent with:
+
+```bash
+make phase11-check
+```
+
+or validate Kubernetes manifests alone with:
+
+```bash
+make validate-manifests
+```
+
+## Repository layout
+
+```text
+apps/dashboard/                    React + TypeScript operations UI
+services/agent/                    Python agent, RAG, evals, persistence, benchmarks
+services/k8s-mcp-server/           Go Kubernetes MCP server
+services/github-mcp-server/        Go GitHub MCP server
+services/incident-api/             Go dashboard/API gateway
+demo/services/                     Go demo microservices
+demo/incidents/                    deterministic failure overlays
+infra/postgres/                    pgvector + operations persistence schema
+infra/kubernetes/                  MCP deployment/RBAC
+knowledge/                         runbooks, incidents, architecture, postmortems
+evals/                             deterministic evaluation cases
+benchmarks/                        benchmark scenarios/results
+.github/workflows/ci.yml           final CI workflow
+```
+
+## Known limitations
+
+- The benchmark runs against a controlled local `kind` environment rather than a production cluster.
+- LLM execution is stochastic; the 30-run result is more representative than any individual run.
+- GitHub change-correlation benchmark data for INC-001–004 is deterministic fixture history; live mode is also implemented for real repositories.
+- Remediation job coordination is in-memory while completed investigations/actions are persisted to PostgreSQL.
+- The current product intentionally exposes only a narrow remediation surface rather than arbitrary infrastructure writes.
+
+## Project status
+
+**Complete.** The project now covers investigation, evidence-backed RCA, RAG, deployment-change intelligence, HITL remediation, persistence, a TypeScript/React dashboard, deterministic evaluation, measured benchmarks, and CI validation.
+
+See [`docs/resume-entry.md`](docs/resume-entry.md) for the final resume-ready project entry.
