@@ -1,7 +1,7 @@
 Metadata-Version: 2.4
 Name: opspilot-agent
-Version: 0.9.0
-Summary: OpsPilot agentic Kubernetes incident investigator with RAG, MCP change intelligence, human-approved remediation, evaluation, and observability
+Version: 0.10.0
+Summary: OpsPilot agentic Kubernetes incident response platform with MCP, RAG, HITL remediation, persistence, and final benchmarks
 Requires-Python: >=3.11
 Requires-Dist: openai-agents==0.22.0
 Requires-Dist: openai<4,>=3.0

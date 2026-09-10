@@ -1,28 +1,15 @@
-# OpsPilot deterministic incident evaluations
+# OpsPilot deterministic evaluations
 
-Phase 5 evaluates the agent against the four controlled Kubernetes incidents without using a second LLM as a judge.
+OpsPilot uses deterministic evaluation rules rather than a second LLM judge.
 
-Each case scores the returned report on:
+`evals/cases/incidents.jsonl` contains the original four Phase 5 scenarios. `evals/cases/incidents-phase6.jsonl` contains four GitHub change-correlation variants. `evals/cases/benchmark.jsonl` is the Phase 10 final 10-case suite.
 
-- expected incident status
-- root-cause signal coverage
-- required diagnostic tool coverage
-- affected resource identification
-- deterministic confidence level
-- RAG usage expectation
-- deterministic timeline presence
+Each evaluation scores expected status, root-cause signal groups, required tool coverage, affected resources, confidence, knowledge usage, timeline presence, and—where configured—source-change correlation.
 
-The total score is 0-100. The default pass threshold is 80.
-
-## Usage
-
-Inject the matching incident first, keep the Kubernetes MCP port-forward running, and then evaluate it:
+For the automated final suite use:
 
 ```bash
-make incident-1
-make eval-1
+make benchmark
 ```
 
-For INC-004, call `/checkout` once after injecting the incident so the timeout is represented in live application logs, then run `make eval-4`.
-
-Evaluation JSON is saved under `.opspilot/evals/`. The underlying investigation artifact is saved under `.opspilot/runs/`.
+See `benchmarks/README.md` for scenario details, aggregate metrics, repeats, RAG ablation, and GitHub change-correlation benchmarking.

@@ -388,3 +388,47 @@ make incident-1-rollout
 Choose **Remediate** in the dashboard and ask OpsPilot to diagnose the payment restart. When the agent requests `k8s_rollback_deployment`, the UI displays the exact namespace/deployment arguments and pauses until **Approve exact action** or **Reject** is selected.
 
 Phase 8 remediation jobs are intentionally stored in memory. Restarting the Python agent service clears active jobs; persistent incident/job storage is a later production-hardening step.
+
+## Phase 9 — PostgreSQL incident history
+
+Completed investigations are persisted in the existing PostgreSQL `opspilot` database under the `operations` schema. The React dashboard exposes an **Incident history** view that lists prior runs and reopens the exact stored structured report. Persistence is non-fatal: if history storage is unavailable, the live RCA is still returned and local `.opspilot/runs` artifacts remain a fallback.
+
+## Phase 10 — Final evaluation and benchmarks
+
+Phase 10 expands the controlled evaluation suite to 10 scenarios: nine failure/degradation cases plus a healthy control. The benchmark runner automatically injects each scenario, restores Kubernetes MCP RBAC, generates checkout traffic when required, runs the OpenAI investigator, scores the report, and aggregates operational metrics.
+
+Primary run:
+
+```bash
+# Index the new Phase 10 runbooks once.
+make rag-ingest
+
+# Keep the Kubernetes MCP port-forward running in another terminal.
+make benchmark
+```
+
+For more stable final numbers:
+
+```bash
+make benchmark BENCHMARK_REPEATS=3
+```
+
+Artifacts are written under `.opspilot/benchmarks/` as JSON, CSV, and Markdown. Reported metrics include pass rate, root-cause signal accuracy, status accuracy, required-tool coverage, remediation recommendation coverage, median/P95 latency, average tool calls, total tokens, and estimated text-token cost.
+
+Optional RAG ablation:
+
+```bash
+make benchmark-no-rag
+```
+
+Optional GitHub change-correlation benchmark for the existing four deterministic fixtures:
+
+```bash
+# Terminal 1
+make github-mcp-server-fixture
+
+# Terminal 2
+make benchmark-change
+```
+
+The standard 10-case benchmark intentionally disables GitHub so the five new scenarios are not falsely correlated with nonexistent source commits. The four Phase 6 fixture cases remain the controlled benchmark for deployment/source-change correlation.

@@ -1,0 +1,194 @@
+[
+  {
+    "id": "INC-001",
+    "overlay": "demo/incidents/inc-001-missing-database-url",
+    "settle_seconds": 7,
+    "remediation_signal_groups": [
+      [
+        "database_url"
+      ],
+      [
+        "secret",
+        "config"
+      ]
+    ]
+  },
+  {
+    "id": "INC-002",
+    "overlay": "demo/incidents/inc-002-oomkilled",
+    "settle_seconds": 9,
+    "remediation_signal_groups": [
+      [
+        "memory"
+      ],
+      [
+        "limit",
+        "increase"
+      ]
+    ]
+  },
+  {
+    "id": "INC-003",
+    "overlay": "demo/incidents/inc-003-broken-readiness",
+    "settle_seconds": 6,
+    "remediation_signal_groups": [
+      [
+        "readiness"
+      ],
+      [
+        "8080"
+      ]
+    ]
+  },
+  {
+    "id": "INC-004",
+    "overlay": "demo/incidents/inc-004-downstream-timeout",
+    "settle_seconds": 4,
+    "trigger_checkout": true,
+    "remediation_signal_groups": [
+      [
+        "timeout"
+      ],
+      [
+        "increase",
+        "500"
+      ]
+    ]
+  },
+  {
+    "id": "INC-005",
+    "overlay": "demo/incidents/inc-005-image-pull",
+    "settle_seconds": 6,
+    "remediation_signal_groups": [
+      [
+        "image",
+        "tag"
+      ],
+      [
+        "fix",
+        "rollback",
+        "available"
+      ]
+    ]
+  },
+  {
+    "id": "INC-006",
+    "overlay": "demo/incidents/inc-006-missing-secret",
+    "settle_seconds": 6,
+    "remediation_signal_groups": [
+      [
+        "secret"
+      ],
+      [
+        "payment-db"
+      ]
+    ]
+  },
+  {
+    "id": "INC-007",
+    "overlay": "demo/incidents/inc-007-bad-inventory-dns",
+    "settle_seconds": 4,
+    "trigger_checkout": true,
+    "remediation_signal_groups": [
+      [
+        "inventory_url",
+        "endpoint",
+        "url"
+      ],
+      [
+        "inventory-v2",
+        "inventory"
+      ]
+    ]
+  },
+  {
+    "id": "INC-008",
+    "overlay": "demo/incidents/inc-008-broken-liveness",
+    "settle_seconds": 16,
+    "remediation_signal_groups": [
+      [
+        "liveness"
+      ],
+      [
+        "8080"
+      ]
+    ]
+  },
+  {
+    "id": "INC-009",
+    "overlay": "demo/incidents/inc-009-port-mismatch",
+    "settle_seconds": 16,
+    "remediation_signal_groups": [
+      [
+        "port"
+      ],
+      [
+        "8080",
+        "9090"
+      ]
+    ]
+  },
+  {
+    "id": "INC-010",
+    "overlay": "demo/kubernetes/base",
+    "settle_seconds": 4,
+    "wait_healthy": true,
+    "remediation_signal_groups": []
+  },
+  {
+    "id": "INC-001-GIT",
+    "overlay": "demo/incidents/inc-001-missing-database-url",
+    "settle_seconds": 7,
+    "remediation_signal_groups": [
+      [
+        "database_url"
+      ],
+      [
+        "secret",
+        "config"
+      ]
+    ]
+  },
+  {
+    "id": "INC-002-GIT",
+    "overlay": "demo/incidents/inc-002-oomkilled",
+    "settle_seconds": 9,
+    "remediation_signal_groups": [
+      [
+        "memory"
+      ],
+      [
+        "limit",
+        "increase"
+      ]
+    ]
+  },
+  {
+    "id": "INC-003-GIT",
+    "overlay": "demo/incidents/inc-003-broken-readiness",
+    "settle_seconds": 6,
+    "remediation_signal_groups": [
+      [
+        "readiness"
+      ],
+      [
+        "8080"
+      ]
+    ]
+  },
+  {
+    "id": "INC-004-GIT",
+    "overlay": "demo/incidents/inc-004-downstream-timeout",
+    "settle_seconds": 4,
+    "trigger_checkout": true,
+    "remediation_signal_groups": [
+      [
+        "timeout"
+      ],
+      [
+        "increase",
+        "500"
+      ]
+    ]
+  }
+]

@@ -12,7 +12,7 @@ class EvaluationCase(BaseModel):
     root_cause_signal_groups: list[list[str]]
     required_tools: list[str]
     expected_affected_any: list[str] = Field(default_factory=list)
-    expect_knowledge: bool = True
+    expect_knowledge: bool | None = True
     minimum_timeline_events: int = 1
     pass_score: int = 80
     expect_change_correlation: bool = False

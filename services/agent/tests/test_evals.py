@@ -59,6 +59,17 @@ class EvalScoringTests(unittest.TestCase):
         self.assertTrue(result.passed)
         self.assertEqual(result.score, 100.0)
 
+    def test_knowledge_can_be_optional(self):
+        case = EvaluationCase.model_validate({
+            "id": "INC-010",
+            "query": "healthy?",
+            "expected_status": "healthy",
+            "root_cause_signal_groups": [["healthy"]],
+            "required_tools": ["k8s_list_pods"],
+            "expect_knowledge": None,
+        })
+        self.assertIsNone(case.expect_knowledge)
+
     def test_change_aware_report_scores_change_correlation(self):
         case = EvaluationCase.model_validate(
             {

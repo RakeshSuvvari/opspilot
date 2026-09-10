@@ -42,7 +42,7 @@ if [[ -n "${phase6_diff}" ]]; then
   exit 1
 fi
 
-echo "==> Phase 3-9 Python syntax"
+echo "==> Phase 3-10 Python syntax"
 python3 -m compileall -q "${ROOT_DIR}/services/agent/src" "${ROOT_DIR}/services/agent/tests"
 
 echo "==> Phase 4 SQL files"
@@ -109,3 +109,18 @@ grep -q 'OPSPILOT_HISTORY_ENABLED=true' "${ROOT_DIR}/.env"
 grep -q 'GET /api/v1/investigations' "${ROOT_DIR}/services/incident-api/internal/api/server.go"
 
 echo "Phase 9 persistence source checks passed."
+
+
+echo "==> Phase 10 final benchmark suite"
+test -s "${ROOT_DIR}/evals/cases/benchmark.jsonl"
+test -s "${ROOT_DIR}/benchmarks/scenarios.json"
+test -s "${ROOT_DIR}/services/agent/src/opspilot_agent/benchmarks/cli.py"
+grep -q '"INC-005"' "${ROOT_DIR}/evals/cases/benchmark.jsonl"
+grep -q '"INC-010"' "${ROOT_DIR}/evals/cases/benchmark.jsonl"
+grep -q 'opspilot-benchmark' "${ROOT_DIR}/services/agent/pyproject.toml"
+grep -q 'OPSPILOT_BENCHMARK_INPUT_USD_PER_MILLION=0.75' "${ROOT_DIR}/.env"
+for incident in 005-image-pull 006-missing-secret 007-bad-inventory-dns 008-broken-liveness 009-port-mismatch; do
+  test -s "${ROOT_DIR}/demo/incidents/inc-${incident}/kustomization.yaml"
+done
+
+echo "Phase 10 benchmark source checks passed."

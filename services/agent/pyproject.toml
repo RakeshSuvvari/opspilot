@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "opspilot-agent"
-version = "0.9.0"
-description = "OpsPilot agentic Kubernetes incident investigator with RAG, MCP change intelligence, human-approved remediation, evaluation, and observability"
+version = "0.10.0"
+description = "OpsPilot agentic Kubernetes incident response platform with MCP, RAG, HITL remediation, persistence, and final benchmarks"
 requires-python = ">=3.11"
 dependencies = [
     "openai-agents==0.22.0",
@@ -22,6 +22,7 @@ opspilot-agent = "opspilot_agent.cli:main"
 opspilot-rag = "opspilot_agent.rag.cli:main"
 opspilot-db = "opspilot_agent.rag.admin:main"
 opspilot-eval = "opspilot_agent.evals.cli:main"
+opspilot-benchmark = "opspilot_agent.benchmarks.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

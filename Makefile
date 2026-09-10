@@ -13,6 +13,10 @@ RAG_QUERY ?= crashloop missing database configuration
 EVAL_CASE ?= INC-001
 EVAL_CASES ?= evals/cases/incidents.jsonl
 PHASE6_EVAL_CASES ?= evals/cases/incidents-phase6.jsonl
+BENCHMARK_EVAL_CASES ?= evals/cases/benchmark.jsonl
+BENCHMARK_SCENARIOS ?= benchmarks/scenarios.json
+BENCHMARK_REPEATS ?= 1
+BENCHMARK_CASE ?= INC-001
 GITHUB_MCP_URL ?= http://localhost:8090/mcp
 INCIDENT_API_DIR ?= services/incident-api
 DASHBOARD_DIR ?= apps/dashboard
@@ -28,7 +32,7 @@ INCIDENT_API_IMAGE ?= opspilot/incident-api:dev
 	eval-change-1 eval-change-2 eval-change-3 eval-change-4 phase6-check \
 	enable-remediation disable-remediation restore-k8s-remediation-rbac status-remediation phase7-up incident-1-rollout incident-2-rollout incident-3-rollout remediate remediate-1 phase7-check \
 	agent-api-remediation incident-api test-incident-api dashboard-setup dashboard dashboard-build dashboard-check build-incident-api-image build-dashboard-image phase8-check \
-	history-list phase9-check
+	history-list phase9-check incident-5 incident-6 incident-7 incident-8 incident-9 incident-10 eval-5 eval-6 eval-7 eval-8 eval-9 eval-10 benchmark benchmark-no-rag benchmark-change benchmark-case phase10-check
 
 help:
 	@echo "OpsPilot"
@@ -116,6 +120,19 @@ help:
 	@echo "  make history-list        - list persisted investigations through the Go Incident API"
 	@echo "  make phase9-check        - Phase 9 Python/Go/dashboard checks"
 	@echo ""
+	@echo "Phase 10 - final evaluation + benchmarks"
+	@echo "  make incident-5          - checkout ImagePullBackOff"
+	@echo "  make incident-6          - payment missing Secret / CreateContainerConfigError"
+	@echo "  make incident-7          - checkout bad inventory DNS/URL (trigger /checkout)"
+	@echo "  make incident-8          - inventory broken liveness probe"
+	@echo "  make incident-9          - payment app/probe port mismatch"
+	@echo "  make incident-10         - healthy control baseline"
+	@echo "  make benchmark           - run all 10 cases with RAG and aggregate metrics"
+	@echo "  make benchmark-no-rag    - optional 10-case RAG ablation"
+	@echo "  make benchmark-change    - 4-case GitHub fixture correlation benchmark"
+	@echo "  make benchmark-case BENCHMARK_CASE=INC-005 - run one benchmark case"
+	@echo "  make phase10-check       - source/unit/dashboard checks for final benchmark suite"
+	@echo ""
 	@echo "  make cluster-down        - delete local cluster"
 
 verify:
@@ -194,6 +211,43 @@ incident-4:
 	kubectl apply -k demo/incidents/inc-004-downstream-timeout
 	@$(MAKE) --no-print-directory restore-k8s-mcp-rbac
 	@echo "INC-004 injected. Port-forward checkout and call /checkout to observe the timeout."
+
+incident-5:
+	-kubectl delete namespace $(NAMESPACE) --ignore-not-found=true --wait=true
+	kubectl apply -k demo/incidents/inc-005-image-pull
+	@$(MAKE) --no-print-directory restore-k8s-mcp-rbac
+	@echo "INC-005 injected. Checkout should enter ErrImagePull/ImagePullBackOff."
+
+incident-6:
+	-kubectl delete namespace $(NAMESPACE) --ignore-not-found=true --wait=true
+	kubectl apply -k demo/incidents/inc-006-missing-secret
+	@$(MAKE) --no-print-directory restore-k8s-mcp-rbac
+	@echo "INC-006 injected. Payment should report CreateContainerConfigError for Secret payment-db."
+
+incident-7:
+	-kubectl delete namespace $(NAMESPACE) --ignore-not-found=true --wait=true
+	kubectl apply -k demo/incidents/inc-007-bad-inventory-dns
+	@$(MAKE) --no-print-directory restore-k8s-mcp-rbac
+	@echo "INC-007 injected. Port-forward checkout and call /checkout once to record the DNS failure."
+
+incident-8:
+	-kubectl delete namespace $(NAMESPACE) --ignore-not-found=true --wait=true
+	kubectl apply -k demo/incidents/inc-008-broken-liveness
+	@$(MAKE) --no-print-directory restore-k8s-mcp-rbac
+	@echo "INC-008 injected. Wait ~10s for inventory liveness failures/restarts."
+
+incident-9:
+	-kubectl delete namespace $(NAMESPACE) --ignore-not-found=true --wait=true
+	kubectl apply -k demo/incidents/inc-009-port-mismatch
+	@$(MAKE) --no-print-directory restore-k8s-mcp-rbac
+	@echo "INC-009 injected. Payment listens on 9090 while Kubernetes probes port 8080."
+
+incident-10:
+	@$(MAKE) --no-print-directory reset-demo
+	kubectl rollout status deployment/checkout -n $(NAMESPACE) --timeout=60s
+	kubectl rollout status deployment/payment -n $(NAMESPACE) --timeout=60s
+	kubectl rollout status deployment/inventory -n $(NAMESPACE) --timeout=60s
+	@echo "INC-010 healthy control ready."
 
 build-k8s-mcp-image:
 	docker build -t $(K8S_MCP_IMAGE) services/k8s-mcp-server
@@ -558,3 +612,75 @@ phase9-check: agent-test test-incident-api dashboard-check
 	@test -s services/agent/src/opspilot_agent/history.py
 	@test -s apps/dashboard/src/components/HistoryPanel.tsx
 	@echo "Phase 9 checks passed. Rerun make db-init, then start the Phase 8 services and open Incident history."
+
+
+# Phase 10 - final evaluation and benchmark suite
+eval-5: agent-setup
+	@$(MAKE) --no-print-directory eval-case EVAL_CASES=$(BENCHMARK_EVAL_CASES) EVAL_CASE=INC-005
+
+eval-6: agent-setup
+	@$(MAKE) --no-print-directory eval-case EVAL_CASES=$(BENCHMARK_EVAL_CASES) EVAL_CASE=INC-006
+
+eval-7: agent-setup
+	@$(MAKE) --no-print-directory eval-case EVAL_CASES=$(BENCHMARK_EVAL_CASES) EVAL_CASE=INC-007
+
+eval-8: agent-setup
+	@$(MAKE) --no-print-directory eval-case EVAL_CASES=$(BENCHMARK_EVAL_CASES) EVAL_CASE=INC-008
+
+eval-9: agent-setup
+	@$(MAKE) --no-print-directory eval-case EVAL_CASES=$(BENCHMARK_EVAL_CASES) EVAL_CASE=INC-009
+
+eval-10: agent-setup
+	@$(MAKE) --no-print-directory eval-case EVAL_CASES=$(BENCHMARK_EVAL_CASES) EVAL_CASE=INC-010
+
+benchmark: agent-setup
+	@if [ -f .env ]; then set -a; source .env; set +a; fi; \
+		OPSPILOT_GITHUB_ENABLED=false \
+		OPSPILOT_REMEDIATION_ENABLED=false \
+		OPSPILOT_RAG_ENABLED=true \
+		$(AGENT_PYTHON) -m opspilot_agent.benchmarks.cli \
+			--cases $(BENCHMARK_EVAL_CASES) \
+			--scenarios $(BENCHMARK_SCENARIOS) \
+			--namespace $(NAMESPACE) \
+			--repeats $(BENCHMARK_REPEATS)
+
+benchmark-no-rag: agent-setup
+	@if [ -f .env ]; then set -a; source .env; set +a; fi; \
+		OPSPILOT_GITHUB_ENABLED=false \
+		OPSPILOT_REMEDIATION_ENABLED=false \
+		OPSPILOT_RAG_ENABLED=false \
+		$(AGENT_PYTHON) -m opspilot_agent.benchmarks.cli \
+			--cases $(BENCHMARK_EVAL_CASES) \
+			--scenarios $(BENCHMARK_SCENARIOS) \
+			--namespace $(NAMESPACE) \
+			--repeats $(BENCHMARK_REPEATS)
+
+benchmark-change: agent-setup
+	@if [ -f .env ]; then set -a; source .env; set +a; fi; \
+		OPSPILOT_GITHUB_ENABLED=true \
+		OPSPILOT_REMEDIATION_ENABLED=false \
+		OPSPILOT_RAG_ENABLED=true \
+		$(AGENT_PYTHON) -m opspilot_agent.benchmarks.cli \
+			--cases $(PHASE6_EVAL_CASES) \
+			--scenarios $(BENCHMARK_SCENARIOS) \
+			--namespace $(NAMESPACE) \
+			--repeats $(BENCHMARK_REPEATS)
+
+benchmark-case: agent-setup
+	@if [ -f .env ]; then set -a; source .env; set +a; fi; \
+		OPSPILOT_GITHUB_ENABLED=false \
+		OPSPILOT_REMEDIATION_ENABLED=false \
+		OPSPILOT_RAG_ENABLED=true \
+		$(AGENT_PYTHON) -m opspilot_agent.benchmarks.cli \
+			--cases $(BENCHMARK_EVAL_CASES) \
+			--scenarios $(BENCHMARK_SCENARIOS) \
+			--namespace $(NAMESPACE) \
+			--case $(BENCHMARK_CASE)
+
+phase10-check: agent-test test-incident-api dashboard-check
+	./scripts/verify-source.sh
+	@test -s evals/cases/benchmark.jsonl
+	@test -s benchmarks/scenarios.json
+	@test -s services/agent/src/opspilot_agent/benchmarks/cli.py
+	@grep -q 'opspilot-benchmark' services/agent/pyproject.toml
+	@echo "Phase 10 checks passed. Re-run make rag-ingest for the new runbooks, then run make benchmark."

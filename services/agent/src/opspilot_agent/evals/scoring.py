@@ -34,7 +34,7 @@ def score_report(case: EvaluationCase, report: IncidentReport) -> EvaluationResu
     confidence_score = 5.0 if report.confidence == Confidence.HIGH else (2.5 if report.confidence == Confidence.MEDIUM else 0.0)
 
     knowledge_used = "search_knowledge" in actual_tools
-    knowledge_score = 5.0 if knowledge_used == case.expect_knowledge else 0.0
+    knowledge_score = 5.0 if case.expect_knowledge is None or knowledge_used == case.expect_knowledge else 0.0
     timeline_score = 5.0 if len(report.timeline) >= case.minimum_timeline_events else 0.0
 
     change_score = 0.0

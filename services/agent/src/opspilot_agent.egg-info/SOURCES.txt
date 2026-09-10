@@ -18,6 +18,11 @@ src/opspilot_agent.egg-info/dependency_links.txt
 src/opspilot_agent.egg-info/entry_points.txt
 src/opspilot_agent.egg-info/requires.txt
 src/opspilot_agent.egg-info/top_level.txt
+src/opspilot_agent/benchmarks/__init__.py
+src/opspilot_agent/benchmarks/cli.py
+src/opspilot_agent/benchmarks/models.py
+src/opspilot_agent/benchmarks/runner.py
+src/opspilot_agent/benchmarks/summary.py
 src/opspilot_agent/evals/__init__.py
 src/opspilot_agent/evals/cli.py
 src/opspilot_agent/evals/models.py
@@ -33,6 +38,7 @@ src/opspilot_agent/rag/models.py
 src/opspilot_agent/rag/retrieval.py
 src/opspilot_agent/rag/tool.py
 tests/test_assessment.py
+tests/test_benchmarks.py
 tests/test_chunking.py
 tests/test_config.py
 tests/test_evals.py
