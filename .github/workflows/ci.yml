@@ -16,6 +16,7 @@ jobs:
   go-tests:
     name: Go tests
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -29,6 +30,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+
           modules=(
             demo/services/checkout
             demo/services/payment
@@ -37,14 +39,19 @@ jobs:
             services/github-mcp-server
             services/incident-api
           )
+
           for module in "${modules[@]}"; do
             echo "==> go test ${module}"
-            (cd "$module" && GOWORK=off go test ./...)
+            (
+              cd "${module}"
+              GOWORK=off go test ./...
+            )
           done
 
   python-tests:
     name: Python tests
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -64,14 +71,19 @@ jobs:
       - name: Run unit tests
         env:
           PYTHONPATH: services/agent/src
-        run: python -m unittest discover -s services/agent/tests -v
+        run: |
+          python -m unittest discover \
+            -s services/agent/tests \
+            -v
 
   dashboard:
     name: TypeScript dashboard
     runs-on: ubuntu-latest
+
     defaults:
       run:
         working-directory: apps/dashboard
+
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -93,12 +105,35 @@ jobs:
   manifests:
     name: Kubernetes manifests
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout
         uses: actions/checkout@v7
 
       - name: Set up kubectl
         uses: azure/setup-kubectl@v5
+
+      - name: Install kubeconform
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          KUBECONFORM_VERSION="0.8.0"
+
+          curl -fsSL \
+            "https://github.com/yannh/kubeconform/releases/download/v${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz" \
+            -o /tmp/kubeconform.tar.gz
+
+          tar -xzf /tmp/kubeconform.tar.gz \
+            -C /tmp \
+            kubeconform
+
+          sudo install \
+            /tmp/kubeconform \
+            /usr/local/bin/kubeconform
+
+          echo "Installed kubeconform:"
+          kubeconform -v
 
       - name: Validate Kustomize manifests
         run: ./scripts/validate-manifests.sh
